@@ -1,5 +1,6 @@
 import asyncio
 import struct
+import numpy as np
 
 
 class SoundCardTCPServer(object):
@@ -25,43 +26,27 @@ class SoundCardTCPServer(object):
 
     async def _recv_data(self, stream):
         # TODO: here we will add the handling of the data to be sent, by blocks of 2048
-        size_msg = await stream.readexactly(4)
-        size, = struct.unpack('i', size_msg)
-        msg = await stream.readexactly(size)
-        print(msg)
-        return msg
+        preamble_size = 7
+        preamble_bytes = await stream.readexactly(preamble_size)
+        dt = np.dtype(np.int8)
+        dt = dt.newbyteorder('<')
+        preamble = np.frombuffer(preamble_bytes, dtype=dt, count=-1)
+        print(preamble)
+
+        # size of header will depend on preamble data
+        # TODO: interpret preamble data
+        print(preamble[4])
+        header = np.zeros(7+16+32768+2048+1, dtype=np.int8)
+
+        header_bytes = await stream.readexactly(34840 - preamble_size)
+        print("remaining of the header received correctly")
+
+        #size_msg = await stream.readexactly(4)
+        #size, = struct.unpack('i', size_msg)
+        #msg = await stream.readexactly(size)
+        #print(msg)
+        return preamble
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)
     asyncio.get_event_loop().run_until_complete(srv.start_server())
-
-
-# @asyncio.coroutine
-# def handle_echo(reader, writer):
-#     data = yield from reader.read(2048)
-#     message = data.decode()
-#     addr = writer.get_extra_info('peername')
-#     print("Received %r from %r" % (message, addr))
-
-#     print("Send: %r" % message)
-#     writer.write(data)
-#     yield from writer.drain()
-
-#     print("Close the client socket")
-#     writer.close()
-
-# loop = asyncio.get_event_loop()
-# coro = asyncio.start_server(handle_echo, '127.0.0.1', 8888, loop=loop)
-# server = loop.run_until_complete(coro)
-
-# # Serve requests until Ctrl+C is pressed
-# print('Serving on {}'.format(server.sockets[0].getsockname()))
-# try:
-#     loop.run_forever()
-# except KeyboardInterrupt:
-#     pass
-
-# # Close the server
-# server.close()
-# loop.run_until_complete(server.wait_closed())
-# loop.close()

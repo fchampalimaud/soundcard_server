@@ -10,7 +10,7 @@ class SoundCardTCPServer(object):
       self.port = port
 
     async def start_server(self):
-        # init connection to soundcard
+        # init connection to soundcard through the usb connection
 
         # Start server to listen for incoming requests
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
@@ -25,27 +25,46 @@ class SoundCardTCPServer(object):
         msg = await self._recv_data(reader)
 
     async def _recv_data(self, stream):
-        # TODO: here we will add the handling of the data to be sent, by blocks of 2048
+        # get first 7 bytes to know which type of frame we are going to receive
         preamble_size = 7
         preamble_bytes = await stream.readexactly(preamble_size)
-        dt = np.dtype(np.int8)
-        dt = dt.newbyteorder('<')
-        preamble = np.frombuffer(preamble_bytes, dtype=dt, count=-1)
-        print(preamble)
+        print(preamble_bytes)
 
-        # size of header will depend on preamble data
-        # TODO: interpret preamble data
-        print(preamble[4])
-        header = np.zeros(7+16+32768+2048+1, dtype=np.int8)
+        # size of header will depend on preamble data (index 4 defines type of frame)
+        frame_type = preamble_bytes[4]
+        print(frame_type)
+        header_size = 7 + 16 + 1
+        if frame_type == 128:
+            header_size += 32768 + 2048
+        elif frame_type == 129:
+            header_size = 2048
 
-        header_bytes = await stream.readexactly(34840 - preamble_size)
+        header_bytes = await stream.readexactly(header_size - preamble_size)
         print("remaining of the header received correctly")
+
+        # TODO: while until end to send the data
+        data_size = 7 + 4 + 32768 + 1
+        index = 0
+        while True:
+            index += 1
+            chunk = await stream.readexactly(data_size)
+            if not chunk:
+                break
+
+            # calculate checksum for verification
+            print(f'chunk {chunk[7:7 + 4]}, checksum: {chunk[-1]}')
+            
+            # TODO: send chunk directly? or check checksum first?
+
+            #print(chunk)
+
+
 
         #size_msg = await stream.readexactly(4)
         #size, = struct.unpack('i', size_msg)
         #msg = await stream.readexactly(size)
         #print(msg)
-        return preamble
+        return preamble_bytes
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)

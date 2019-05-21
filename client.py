@@ -43,15 +43,14 @@ def tcp_send_sound_client(loop):
     header = np.zeros(preamble_size + metadata_size + data_chunk_size + file_metadata_size + checksum_size, dtype=np.uint8)
     header[:preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
 
-    print(header[:preamble_size])
-
-    # TODO: prepare rest of first request according to the protocol before sending anything
     # TODO: this should be extracted from here
-    # add metadata information to header
+    # TODO: add metadata information to header
 
 
     # add first block of data to header
     header[preamble_size + metadata_size:preamble_size + metadata_size + data_chunk_size] = wave_int8[:data_chunk_size]
+    # calculate checksum and add it to the frame
+    header[-1] = header.sum()
 
     # send preamble first
     writer.write(bytes(header[:preamble_size]))
@@ -73,22 +72,18 @@ def tcp_send_sound_client(loop):
         # write data from wave_int to cmd
         wave_idx = i * 32768
         data_block = wave_int8[wave_idx: wave_idx + 32768]
-        # TODO: for the last command_to_send, we should clear all data so that the remaining of the 32kb 
-        #       of data is empty instead of data from the last command
-        if i == commands_to_send - 2:
+        if i == commands_to_send - 1:
             data_cmd[data_cmd_data_index:] = 0
         data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = data_block
 
         # sum all bytes as a byte and save that in the last index as the checksum
+        # clean last byte so we get the correct checksum
+        data_cmd[-1] = 0
         data_cmd[-1] = data_cmd.sum(dtype=np.int8)
-        print(f'checksum idx: {i}, {data_cmd[-1].view(np.uint8)}')
+        #print(f'checksum idx: {i}, {data_cmd[-1].view(np.uint8)}')
 
-        # NOTE: on the last chunk, which is smaller, for some reason, it is trying to send 32780 bytes instead of 32768
         # write to socket
         writer.write(bytes(data_cmd))
-
-
-
 
     print('Close the socket')
     writer.close()

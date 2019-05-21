@@ -45,15 +45,36 @@ def tcp_send_sound_client(loop):
     data_chunk_size = 32768
     file_metadata_size = 2048
     checksum_size = 1
-    header = np.zeros(preamble_size + metadata_size + data_chunk_size + file_metadata_size + checksum_size, dtype=np.uint8)
+    header = np.zeros(preamble_size + metadata_size + data_chunk_size + file_metadata_size + checksum_size, dtype=np.int8)
     header[:preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
 
     # TODO: this should be extracted from here
     metadata = np.array([sound_index, duration, sample_rate, data_type ], dtype=np.int32)
     header[preamble_size: preamble_size + metadata_size] = metadata.view(np.int8)
 
-    #TODO: filemetadata
+    filemetadata_index = preamble_size + metadata_size + data_chunk_size
+    filemetadata = np.zeros(2048, dtype=np.int8)
+    sound_filename = np.array('testing_filename', 'c').view(dtype=np.int8)
+    sound_filename_size = len(sound_filename) if len(sound_filename) < 169 else 169
+    filemetadata[0:sound_filename_size] = sound_filename
 
+    metadata_filename = np.array('testing_metadata_name', 'c').view(dtype=np.int8)
+    metadata_filename_size = len(metadata_filename) if len(metadata_filename) < 169 else 169
+    filemetadata[170:170 + metadata_filename_size] = metadata_filename
+
+    description_filename = np.array('testing_description_name', 'c').view(dtype=np.int8)
+    description_filename_size = len(description_filename) if len(description_filename) < 169 else 169
+    filemetadata[340:340 + description_filename_size] = description_filename
+
+    metadata_filename_content = np.array('testing_content_from_metadata_filename', 'c').view(dtype=np.int8)
+    metadata_filename_content_size = len(metadata_filename_content) if len(metadata_filename_content) < 1023 else 1023
+    filemetadata[512:512 + metadata_filename_content_size] = metadata_filename_content
+
+    description_filename_content = np.array('testing_content_from_description_filename', 'c').view(dtype=np.int8)
+    description_filename_content_size = len(description_filename_content) if len(description_filename_content) < 511 else 511
+    filemetadata[1536:1536 + description_filename_content_size] = description_filename_content
+
+    header[filemetadata_index: filemetadata_index + file_metadata_size] = filemetadata
 
     # add first block of data to header
     header[preamble_size + metadata_size:preamble_size + metadata_size + data_chunk_size] = wave_int8[:data_chunk_size]

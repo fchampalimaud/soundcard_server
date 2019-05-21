@@ -1,6 +1,7 @@
 import asyncio
 import struct
 import numpy as np
+from asyncio import IncompleteReadError
 
 
 class SoundCardTCPServer(object):
@@ -40,21 +41,25 @@ class SoundCardTCPServer(object):
             header_size = 2048
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
-        print("remaining of the header received correctly")
+        print('remaining of the header received correctly')
 
-        # TODO: while until end to send the data
+        checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
+        print(f'header checksum: {header_bytes[-1]}, calculated: {checksum}')
+
+        # TODO: send the first command to the soundcard here
+
         data_size = 7 + 4 + 32768 + 1
-        index = 0
         while True:
-            index += 1
-            chunk = await stream.readexactly(data_size)
-            if not chunk:
+            try:
+                chunk = await stream.readexactly(data_size)                
+            except IncompleteReadError as e:
                 break
 
             # calculate checksum for verification
-            print(f'chunk {chunk[7:7 + 4]}, checksum: {chunk[-1]}')
+            checksum = sum(chunk[:-1]) & 0xFF
+            print(f'checksum received: {chunk[-1]}, checksum local: {checksum}')
             
-            # TODO: send chunk directly? or check checksum first?
+            # TODO: send chunk directly to the soundcard if the checksum is the same
 
             #print(chunk)
 

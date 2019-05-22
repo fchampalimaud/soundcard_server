@@ -115,8 +115,14 @@ async def tcp_send_sound_client(loop):
         # write to socket
         writer.write(bytes(data_cmd))
 
-    print('Close the socket')
-    writer.close()
+        # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
+        await writer.drain()
+
+    writer.write_eof()
+
+    msg = await reader.readexactly(2)
+    if msg == b'OK':
+        print('Data successfully sent!')
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(tcp_send_sound_client(loop))

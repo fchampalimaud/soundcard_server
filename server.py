@@ -23,9 +23,9 @@ class SoundCardTCPServer(object):
         addr = writer.get_extra_info('peername')
  
         print(f'Request received from {addr}. Handling received data.')
-        msg = await self._recv_data(reader)
+        msg = await self._recv_data(writer, reader)
 
-    async def _recv_data(self, stream):
+    async def _recv_data(self, writer, stream):
         # get first 7 bytes to know which type of frame we are going to receive
         preamble_size = 7
         preamble_bytes = await stream.readexactly(preamble_size)
@@ -46,12 +46,14 @@ class SoundCardTCPServer(object):
         checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
         print(f'header checksum: {header_bytes[-1]}, calculated: {checksum}')
 
+        print(f'{header_bytes[:16]}')
+
         # TODO: send the first command to the soundcard here
 
         data_size = 7 + 4 + 32768 + 1
         while True:
             try:
-                chunk = await stream.readexactly(data_size)                
+                chunk = await stream.readexactly(data_size)
             except IncompleteReadError as e:
                 break
 
@@ -60,11 +62,11 @@ class SoundCardTCPServer(object):
             print(f'checksum received: {chunk[-1]}, checksum local: {checksum}')
             
             # TODO: send chunk directly to the soundcard if the checksum is the same
+            if chunk[-1] == checksum:
+                # send to board
+                print('Chunk received')
 
-            #print(chunk)
-
-
-
+        writer.write('OK'.encode())
         #size_msg = await stream.readexactly(4)
         #size, = struct.unpack('i', size_msg)
         #msg = await stream.readexactly(size)

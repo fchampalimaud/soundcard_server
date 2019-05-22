@@ -3,9 +3,15 @@ import numpy as np
 
 from pybpod_soundcard_module.utils.generate_sound import generate_sound, WindowConfiguration
 
-@asyncio.coroutine
-def tcp_send_sound_client(loop):
-    reader, writer = yield from asyncio.open_connection('localhost', 9999,
+
+def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
+    data_array = np.array(data_str, 'c').view(dtype=np.int8)
+    data_size = min(len(data_array), max_value)
+    filemetadata[start_index: start_index + data_size] = data_array
+
+
+async def tcp_send_sound_client(loop):
+    reader, writer = await asyncio.open_connection('localhost', 9999,
                                                         loop=loop)
 
     sound_index = 4
@@ -49,31 +55,25 @@ def tcp_send_sound_client(loop):
     header[:preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
 
     # TODO: this should be extracted from here
-    metadata = np.array([sound_index, duration, sample_rate, data_type ], dtype=np.int32)
+    metadata = np.array([sound_index, duration, sample_rate, data_type], dtype=np.int32)
     header[preamble_size: preamble_size + metadata_size] = metadata.view(np.int8)
 
     filemetadata_index = preamble_size + metadata_size + data_chunk_size
     filemetadata = np.zeros(2048, dtype=np.int8)
-    sound_filename = np.array('testing_filename', 'c').view(dtype=np.int8)
-    sound_filename_size = len(sound_filename) if len(sound_filename) < 169 else 169
-    filemetadata[0:sound_filename_size] = sound_filename
 
-    metadata_filename = np.array('testing_metadata_name', 'c').view(dtype=np.int8)
-    metadata_filename_size = len(metadata_filename) if len(metadata_filename) < 169 else 169
-    filemetadata[170:170 + metadata_filename_size] = metadata_filename
+    sound_filename_str = 'testing_filename'
+    metadata_filename_str = 'testing_metadata_name'
+    description_filename_str = 'testing_description_name'
+    metadata_filename_content_str = 'testing_content_from_metadata_filename'
+    description_filename_content_str = 'testing_content_from_description_filename'
 
-    description_filename = np.array('testing_description_name', 'c').view(dtype=np.int8)
-    description_filename_size = len(description_filename) if len(description_filename) < 169 else 169
-    filemetadata[340:340 + description_filename_size] = description_filename
+    add_filemetadata_info(filemetadata, sound_filename_str, 0, 169)
+    add_filemetadata_info(filemetadata, metadata_filename_str, 170, 169)
+    add_filemetadata_info(filemetadata, description_filename_str, 340, 169)
+    add_filemetadata_info(filemetadata, metadata_filename_content_str, 512, 1023)
+    add_filemetadata_info(filemetadata, description_filename_content_str, 1536, 511)
 
-    metadata_filename_content = np.array('testing_content_from_metadata_filename', 'c').view(dtype=np.int8)
-    metadata_filename_content_size = len(metadata_filename_content) if len(metadata_filename_content) < 1023 else 1023
-    filemetadata[512:512 + metadata_filename_content_size] = metadata_filename_content
-
-    description_filename_content = np.array('testing_content_from_description_filename', 'c').view(dtype=np.int8)
-    description_filename_content_size = len(description_filename_content) if len(description_filename_content) < 511 else 511
-    filemetadata[1536:1536 + description_filename_content_size] = description_filename_content
-
+    # add filemetadata to header
     header[filemetadata_index: filemetadata_index + file_metadata_size] = filemetadata
 
     # add first block of data to header

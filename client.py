@@ -3,16 +3,15 @@ import numpy as np
 
 from pybpod_soundcard_module.utils.generate_sound import generate_sound, WindowConfiguration
 
-
+# FIXME: we might have a problem with empty elements
 def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
     data_array = np.array(data_str, 'c').view(dtype=np.int8)
     data_size = min(len(data_array), max_value)
-    filemetadata[start_index: start_index + data_size] = data_array
+    filemetadata[start_index: start_index + data_size] = data_array[:data_size]
 
 
 async def tcp_send_sound_client(loop):
-    reader, writer = await asyncio.open_connection('localhost', 9999,
-                                                        loop=loop)
+    reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
     sound_index = 4
     duration = 4

@@ -29,10 +29,14 @@ class SoundCardTCPServer(object):
         # Start server to listen for incoming requests
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
-        # TODO: try except to capture the Keyboard CTRL + C so that we can close the usb connection properly
-        # TODO: another alternative would be to open and close the connection per request but that seems be slower
         while True:
             await asyncio.sleep(10)
+
+    def close(self):
+        print('Closing USB connection')
+        # close usb connection
+        if self._dev:
+            usb.util.dispose_resources(self._dev)
 
     async def _handle_request(self, reader, writer):
         addr = writer.get_extra_info('peername')
@@ -87,4 +91,9 @@ class SoundCardTCPServer(object):
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)
-    asyncio.get_event_loop().run_until_complete(srv.start_server())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(srv.start_server())
+    except KeyboardInterrupt as k:
+        print(f'Event captured: {k}')
+        srv.close()

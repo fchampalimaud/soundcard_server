@@ -3,7 +3,6 @@ import numpy as np
 
 from pybpod_soundcard_module.utils.generate_sound import generate_sound, WindowConfiguration
 
-# FIXME: we might have a problem with empty elements
 def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
     data_array = np.array(data_str, 'c').view(dtype=np.int8)
     data_size = min(len(data_array), max_value)

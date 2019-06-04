@@ -12,7 +12,7 @@ def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
 async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
-    sound_index = 4
+    sound_index = 2
     duration = 4
     sample_rate = 96000
     data_type = 0
@@ -53,7 +53,7 @@ async def tcp_send_sound_client(loop):
     header[:preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
 
     # TODO: this should be extracted from here
-    metadata = np.array([sound_index, duration, sample_rate, data_type], dtype=np.int32)
+    metadata = np.array([sound_index, sound_file_size_in_samples, sample_rate, data_type], dtype=np.int32)
     header[preamble_size: preamble_size + metadata_size] = metadata.view(np.int8)
 
     filemetadata_index = preamble_size + metadata_size + data_chunk_size

@@ -1,5 +1,5 @@
 import asyncio
-import struct
+import array
 import usb.core
 import usb.util
 import numpy as np
@@ -64,6 +64,60 @@ class SoundCardTCPServer(object):
 
         # TODO: send the first command to the soundcard here
         if checksum == header_bytes[-1]:
+            # convert data before sending to board (only needed until new firmware is ready)
+            int32_size = np.dtype(np.int32).itemsize
+            # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
+            metadata_cmd_header_size = 4 + int32_size + (4 * int32_size)
+            metadata_cmd = np.zeros(metadata_cmd_header_size + 32768 + 2048 + 1, dtype=np.int8)
+
+            metadata_cmd[0] = ord('c')
+            metadata_cmd[1] = ord('m')
+            metadata_cmd[2] = ord('d')
+            metadata_cmd[3] = 0x80
+            metadata_cmd[-1] = ord('f')
+
+            rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
+            # copy that random data
+            metadata_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+            # metadata
+            metadata_cmd[8: 8 + (4 * int32_size)] = np.frombuffer(header_bytes[:4 * int32_size], dtype=np.int8)
+            # add first data block of data to the metadata_cmd
+            metadata_cmd_data_index = metadata_cmd_header_size
+            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + 32768] = np.frombuffer(header_bytes[16: 16 + 32768], dtype=np.int8)
+            # add user metadata (2048 bytes) to metadata_cmd
+            user_metadata_index = metadata_cmd_data_index + 32768
+            metadata_cmd[user_metadata_index: user_metadata_index + 2048] = np.frombuffer(header_bytes[16 + 32768: 16 + 32768 + 2048], dtype=np.int8)
+
+            # send info
+            # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error
+            metadata_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+
+            # send metadata_cmd and get it's reply
+            try:
+                res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
+            except usb.core.USBError as e:
+                # TODO: we probably should try again
+                print("something went wrong while writing to the device")
+                return
+
+            assert res_write == len(metadata_cmd)
+
+            try:
+                ret = self._dev.read(0x81, metadata_cmd_reply, 100)
+            except usb.core.USBError as e:
+                # TODO: we probably should try again
+
+                print("something went wrong while reading from the device")
+                return
+
+            # get the random received and the error received from the reply command
+            rand_val_received = int.from_bytes(metadata_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+            error_received = int.from_bytes(metadata_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+
+            assert rand_val_received == rand_val[0]
+            assert error_received == 0
+            
+            print('header sent to board successfully... waiting for remaining data...')
             pass
 
         data_size = 7 + 4 + 32768 + 1
@@ -83,10 +137,6 @@ class SoundCardTCPServer(object):
 
         writer.write('OK'.encode())
         print('Data request processed successfully!')
-        #size_msg = await stream.readexactly(4)
-        #size, = struct.unpack('i', size_msg)
-        #msg = await stream.readexactly(size)
-        #print(msg)
         return preamble_bytes
 
 if __name__ == "__main__":

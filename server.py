@@ -64,7 +64,7 @@ class SoundCardTCPServer(object):
 
         # TODO: send the first command to the soundcard here
         if checksum == header_bytes[-1]:
-            # convert data before sending to board (only needed until new firmware is ready)
+            # NOTE: convert data before sending to board (only needed until new firmware is ready)
             int32_size = np.dtype(np.int32).itemsize
             # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
             metadata_cmd_header_size = 4 + int32_size + (4 * int32_size)
@@ -120,20 +120,72 @@ class SoundCardTCPServer(object):
             print('header sent to board successfully... waiting for remaining data...')
             pass
 
-        data_size = 7 + 4 + 32768 + 1
-        while True:
-            try:
-                chunk = await stream.readexactly(data_size)
-            except IncompleteReadError as e:
-                break
+            data_size = 7 + 4 + 32768 + 1
 
-            # calculate checksum for verification
-            checksum = sum(chunk[:-1]) & 0xFF
-            
-            # TODO: send chunk directly to the soundcard if the checksum is the same
-            if checksum == chunk[-1]:
-                # send to board
-                pass
+            # NOTE: Convert data before sending
+            # prepare command to send and to receive
+            # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
+            data_cmd = np.zeros(4 + int32_size + int32_size + 32768 + 1, dtype=np.int8)
+            data_cmd_data_index = 4 + int32_size + int32_size
+
+            data_cmd[0] = ord('c')
+            data_cmd[1] = ord('m')
+            data_cmd[2] = ord('d')
+            data_cmd[3] = 0x81
+            data_cmd[-1] = ord('f')
+
+            # Data command reply:     'c' 'm' 'd' '0x81' + random + error
+            data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+
+            while True:
+                try:
+                    chunk = await stream.readexactly(data_size)
+                except IncompleteReadError as e:
+                    break
+
+                # calculate checksum for verification
+                checksum = sum(chunk[:-1]) & 0xFF
+                
+                # TODO: send chunk directly to the soundcard if the checksum is the same
+                if checksum == chunk[-1]:
+                    # send to board
+                    # it has to be as an np.array of int32 so that we can get a view as int8s
+                    rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
+                    # copy that random data
+                    data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+
+                    # write dataIndex to the data_cmd
+                    data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
+
+                    # write data from chunk to cmd
+                    data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
+                    data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+
+                    # send data to device
+                    try:
+                        res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
+                    except usb.core.USBError as e:
+                        # TODO: we probably should try again
+                        print("something went wrong while writing to the device")
+                        return
+
+                    # TODO: we probably should try again
+                    assert res_write == len(data_cmd)
+
+                    try:
+                        ret = self._dev.read(0x81, data_cmd_reply, 100)
+                    except usb.core.USBError as e:
+                        # TODO: we probably should try again
+
+                        print("something went wrong while reading from the device")
+                        return
+
+                    # get the random received and the error received from the reply command
+                    rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+                    error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+
+                    assert rand_val_received == rand_val[0]
+                    assert error_received == 0
 
         writer.write('OK'.encode())
         print('Data request processed successfully!')

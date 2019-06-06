@@ -85,6 +85,11 @@ async def tcp_send_sound_client(loop):
     # send remaining of the header
     writer.write(bytes(header[preamble_size:]))
 
+    # receive ok
+    reply_size = 5 + 6 + 1
+    reply = await reader.readexactly(reply_size)
+    print(reply)
+
     # send rest of data
     # prepare data_cmd
     data_cmd = np.zeros(7 + int32_size + 32768 + 1, dtype=np.int8)

@@ -2,6 +2,8 @@ import asyncio
 import array
 import usb.core
 import usb.util
+import time
+import math
 import numpy as np
 from asyncio import IncompleteReadError
 
@@ -45,6 +47,8 @@ class SoundCardTCPServer(object):
         msg = await self._recv_data(writer, reader)
 
     async def _recv_data(self, writer, stream):
+        start = time.time()
+
         # get first 7 bytes to know which type of frame we are going to receive
         preamble_size = 7
         preamble_bytes = await stream.readexactly(preamble_size)
@@ -59,11 +63,20 @@ class SoundCardTCPServer(object):
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
+        print(f'Time to receive complete first package: {time.time() - start}')
+
+        # prepare message to reply to client (5 bytes for preamble, 6 bytes for timestamp and 1 for checksum)
+        reply = np.zeros(5 + 6 + 1, dtype=np.int8)
+        # prepare with 'ok' reply by default
+        reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
+
         # calculate checksum for verification
         checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
 
         # TODO: send the first command to the soundcard here
         if checksum == header_bytes[-1]:
+            print(f'Start of conversion of header package')
+            start = time.time()
             # NOTE: convert data before sending to board (only needed until new firmware is ready)
             int32_size = np.dtype(np.int32).itemsize
             # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
@@ -92,6 +105,11 @@ class SoundCardTCPServer(object):
             # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error
             metadata_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
 
+            print(f'Time to convert header package: {time.time() - start}')
+
+            print(f'Start sending data to device')
+            start = time.time()
+            
             # send metadata_cmd and get it's reply
             try:
                 res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
@@ -116,6 +134,17 @@ class SoundCardTCPServer(object):
 
             assert rand_val_received == rand_val[0]
             assert error_received == 0
+
+            # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
+            reply[5: 5 + 6] = self._get_timestamp()
+            # calculate checksum
+            checksum = sum(reply) & 0xFF
+            reply[-1] = np.array([checksum], dtype=np.int8)
+
+            # send reply to client
+            writer.write(bytes(reply))
+
+            print(f'Time to send first package to device: {time.time() - start}')
             
             print('header sent to board successfully... waiting for remaining data...')
             pass
@@ -137,6 +166,10 @@ class SoundCardTCPServer(object):
             # Data command reply:     'c' 'm' 'd' '0x81' + random + error
             data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
 
+            chunk_conversion_timings = []
+            chunk_sending_timings = []
+            print('\tStart conversion and sending of chunks data')
+
             while True:
                 try:
                     chunk = await stream.readexactly(data_size)
@@ -148,6 +181,8 @@ class SoundCardTCPServer(object):
                 
                 # TODO: send chunk directly to the soundcard if the checksum is the same
                 if checksum == chunk[-1]:
+                    start = time.time()
+
                     # send to board
                     # it has to be as an np.array of int32 so that we can get a view as int8s
                     rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
@@ -160,6 +195,10 @@ class SoundCardTCPServer(object):
                     # write data from chunk to cmd
                     data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
                     data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+
+                    chunk_conversion_timings.append(time.time() - start)
+
+                    start = time.time()
 
                     # send data to device
                     try:
@@ -187,9 +226,27 @@ class SoundCardTCPServer(object):
                     assert rand_val_received == rand_val[0]
                     assert error_received == 0
 
+                    chunk_sending_timings.append(time.time() - start)
+
+            print(f'chunks_conversion_timings mean: {np.mean(chunk_conversion_timings)}')
+            print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')
+
         writer.write('OK'.encode())
         print('Data request processed successfully!')
         return preamble_bytes
+    
+    def _get_timestamp(self):
+        curr = time.time()
+
+        dec, integer = math.modf(curr)
+
+        dec = dec / 32 * 10.0**6
+
+        result = np.zeros(6, dtype=np.int8)
+        result[:4] = np.array([int(integer)], dtype=np.uint32).view(np.int8)
+        result[4:] = np.array([dec], dtype=np.uint16).view(np.int8)
+
+        return result
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)

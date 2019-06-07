@@ -1,7 +1,17 @@
 import asyncio
+import time
 import numpy as np
 
 from pybpod_soundcard_module.utils.generate_sound import generate_sound, WindowConfiguration
+
+def convert_timestamp(data: bytes):
+    data = np.frombuffer(data, dtype=np.int8)
+
+    integer = data[:4].view(np.uint32)
+    dec = data[4:].view(np.uint16)
+
+    res = integer + (dec * 10.0**-6 * 32)
+    return res
 
 def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
     data_array = np.array(data_str, 'c').view(dtype=np.int8)
@@ -13,7 +23,7 @@ async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
     sound_index = 2
-    duration = 4
+    duration = 8
     sample_rate = 96000
     data_type = 0
 
@@ -42,6 +52,8 @@ async def tcp_send_sound_client(loop):
     sound_file_size_in_samples = len(wave_int8) // 4
     commands_to_send = int(sound_file_size_in_samples * 4 // 32768 + (
         1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+
+    initial_time = time.time()
 
     # start creating message to send according to the protocol
     preamble_size = 7
@@ -85,10 +97,20 @@ async def tcp_send_sound_client(loop):
     # send remaining of the header
     writer.write(bytes(header[preamble_size:]))
 
+    print(f'Start timing between writing complete header and getting reply from server')
+    start = time.time()
+
     # receive ok
     reply_size = 5 + 6 + 1
     reply = await reader.readexactly(reply_size)
-    print(reply)
+    
+    print(f'Received reply from server after writing complete header. timing: {time.time() - start}')
+
+    timestamp = convert_timestamp(reply[5: 5 + 6])
+
+    # if reply is an error, simply return (ou maybe try again would be more adequate)
+    if reply[0] is not 2:
+        return
 
     # send rest of data
     # prepare data_cmd
@@ -96,6 +118,10 @@ async def tcp_send_sound_client(loop):
     data_cmd_data_index = 7
     # add data_cmd header
     data_cmd[:preamble_size] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
+
+    chunk_sending_timings = []
+
+    print(f'chunks to send: {commands_to_send}')
 
     for i in range(1, commands_to_send):
         # write dataIndex
@@ -121,11 +147,29 @@ async def tcp_send_sound_client(loop):
         # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
         await writer.drain()
 
+        start = time.time()
+
+        # receive ok
+        reply_size = 5 + 6 + 1
+        reply = await reader.readexactly(reply_size)
+        
+        chunk_sending_timings.append(time.time() - start)
+
+        timestamp = convert_timestamp(reply[5: 5 + 6])
+
+        # if reply is an error, simply return (ou maybe try again would be more adequate)
+        if reply[0] is not 2:
+            return
+
+
     writer.write_eof()
 
     msg = await reader.readexactly(2)
     if msg == b'OK':
         print('Data successfully sent!')
+
+    print(f'total time to send file: {time.time() - initial_time}')
+    print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(tcp_send_sound_client(loop))

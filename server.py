@@ -137,6 +137,7 @@ class SoundCardTCPServer(object):
 
             # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
             reply[5: 5 + 6] = self._get_timestamp()
+            print(f'timestamp as bytes: {reply[5: 5 + 6]}')
             # calculate checksum
             checksum = sum(reply) & 0xFF
             reply[-1] = np.array([checksum], dtype=np.int8)
@@ -168,6 +169,9 @@ class SoundCardTCPServer(object):
 
             chunk_conversion_timings = []
             chunk_sending_timings = []
+
+            #update reply value
+            reply[2] = np.array([132], dtype=np.int8)
             print('\tStart conversion and sending of chunks data')
 
             while True:
@@ -227,6 +231,14 @@ class SoundCardTCPServer(object):
                     assert error_received == 0
 
                     chunk_sending_timings.append(time.time() - start)
+
+                    reply[5: 5 + 6] = self._get_timestamp()
+                    reply[-1] = 0
+                    # calculate checksum
+                    checksum = sum(reply) & 0xFF
+                    reply[-1] = np.array([checksum], dtype=np.int8)
+
+                    writer.write(bytes(reply))
 
             print(f'chunks_conversion_timings mean: {np.mean(chunk_conversion_timings)}')
             print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')

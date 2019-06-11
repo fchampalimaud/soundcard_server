@@ -16,23 +16,48 @@ class SoundCardTCPServer(object):
 
     async def start_server(self):
         # init connection to soundcard through the usb connection
-        self._dev = usb.core.find(idVendor=0x04d8, idProduct=0xee6a)
-
-        if self._dev is None:
-            print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
-            # return
-        else:
-            # set the active configuration. With no arguments, the first configuration will be the active one
-            # note: some devices reset when setting an already selected configuration so we should check for it before
-            self._cfg = self._dev.get_active_configuration()
-            if self._cfg is None or self._cfg.bConfigurationValue != 1:
-                self._dev.set_configuration(1)
+        self.open()
 
         # Start server to listen for incoming requests
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
         while True:
             await asyncio.sleep(10)
+
+    def open(self):
+        print('Opening USB connection')
+        self._dev = usb.core.find(idVendor=0x04d8, idProduct=0xee6a)
+        if self._dev is None:
+            print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
+        else:
+            # set the active configuration. With no arguments, the first configuration will be the active one
+            # note: some devices reset when setting an already selected configuration so we should check for it before
+            _cfg = self._dev.get_active_configuration()
+            if _cfg is None or _cfg.bConfigurationValue != 1:
+                self._dev.set_configuration(1)
+
+    def restart(self):
+        print('Restarting USB connection')
+        self.close()
+        self.open()
+
+    def reset(self):
+        """
+        Resets the device, waits 700ms and tries to connect again so that the current instance of the SoundCard object can still be used.
+        :note Necessary at the moment after sending a sound
+        """
+        print('Resetting device')
+        if not self._dev:
+            raise Exception("Sound card might not be connected. Please connect it before any operation.")
+
+        # Reset command length:    'c' 'm' 'd' '0x88' + 'f'
+        reset_cmd = [ord('c'), ord('m'), ord('d'), 0x88, ord('f')]
+        # cmd = 'cmd' + chr(0x88) + 'f'
+        wrt = self._dev.write(1, reset_cmd, 100)
+        assert wrt == len(reset_cmd)
+
+        time.sleep(700.0 / 1000.0)
+        self.open()
 
     def close(self):
         print('Closing USB connection')

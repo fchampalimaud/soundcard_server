@@ -140,7 +140,9 @@ class SoundCardTCPServer(object):
                 res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
             except usb.core.USBError as e:
                 # TODO: we probably should try again
-                print("something went wrong while writing to the device")
+                print(f"something went wrong while writing to the device {e}")
+
+                self.reset()
                 return
 
             assert res_write == len(metadata_cmd)
@@ -150,7 +152,9 @@ class SoundCardTCPServer(object):
             except usb.core.USBError as e:
                 # TODO: we probably should try again
 
-                print("something went wrong while reading from the device")
+                print(f"something went wrong while reading from the device: {e}")
+
+                self.reset()
                 return
 
             # get the random received and the error received from the reply command
@@ -172,8 +176,7 @@ class SoundCardTCPServer(object):
 
             print(f'Time to send first package to device: {time.time() - start}')
             
-            print('header sent to board successfully... waiting for remaining data...')
-            pass
+            print('Header sent to board successfully... waiting for remaining data...')
 
             data_size = 7 + 4 + 32768 + 1
 
@@ -207,63 +210,78 @@ class SoundCardTCPServer(object):
 
                 # calculate checksum for verification
                 checksum = sum(chunk[:-1]) & 0xFF
-                
-                # TODO: send chunk directly to the soundcard if the checksum is the same
-                if checksum == chunk[-1]:
-                    start = time.time()
 
-                    # send to board
-                    # it has to be as an np.array of int32 so that we can get a view as int8s
-                    rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
-                    # copy that random data
-                    data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
-
-                    # write dataIndex to the data_cmd
-                    data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
-
-                    # write data from chunk to cmd
-                    data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
-                    data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
-
-                    chunk_conversion_timings.append(time.time() - start)
-
-                    start = time.time()
-
-                    # send data to device
-                    try:
-                        res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
-                    except usb.core.USBError as e:
-                        # TODO: we probably should try again
-                        print("something went wrong while writing to the device")
-                        return
-
-                    # TODO: we probably should try again
-                    assert res_write == len(data_cmd)
-
-                    try:
-                        ret = self._dev.read(0x81, data_cmd_reply, 100)
-                    except usb.core.USBError as e:
-                        # TODO: we probably should try again
-
-                        print("something went wrong while reading from the device")
-                        return
-
-                    # get the random received and the error received from the reply command
-                    rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-                    error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
-
-                    assert rand_val_received == rand_val[0]
-                    assert error_received == 0
-
-                    chunk_sending_timings.append(time.time() - start)
-
+                # if checksum is different, send reply with error                
+                if checksum != chunk[-1]:
+                    # send reply with error
+                    reply[0] = 10
                     reply[5: 5 + 6] = self._get_timestamp()
                     reply[-1] = 0
                     # calculate checksum
                     checksum = sum(reply) & 0xFF
                     reply[-1] = np.array([checksum], dtype=np.int8)
 
-                    writer.write(bytes(reply))
+                    # FIXME: try to get another chunk!? or should we simply exit with a reset?
+                    continue
+                
+                start = time.time()
+
+                # send to board
+                # it has to be as an np.array of int32 so that we can get a view as int8s
+                rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
+                # copy that random data
+                data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+
+                # write dataIndex to the data_cmd
+                data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
+
+                # write data from chunk to cmd
+                data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
+                data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+
+                chunk_conversion_timings.append(time.time() - start)
+
+                start = time.time()
+
+                # send data to device
+                try:
+                    res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
+                except usb.core.USBError as e:
+                    # TODO: we probably should try again
+                    print(f"something went wrong while writing to the device: {e}")
+
+                    self.reset()
+                    return
+
+                # TODO: we probably should try again
+                assert res_write == len(data_cmd)
+
+                try:
+                    ret = self._dev.read(0x81, data_cmd_reply, 100)
+                except usb.core.USBError as e:
+                    # TODO: we probably should try again
+
+                    print(f"something went wrong while reading from the device: {e}")
+                    
+                    self.reset()
+                    return
+
+                # get the random received and the error received from the reply command
+                rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+                error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+
+                assert rand_val_received == rand_val[0]
+                assert error_received == 0
+
+                chunk_sending_timings.append(time.time() - start)
+
+                reply[5: 5 + 6] = self._get_timestamp()
+                reply[-1] = 0
+                # calculate checksum
+                checksum = sum(reply) & 0xFF
+                reply[-1] = np.array([checksum], dtype=np.int8)
+
+                writer.write(bytes(reply))
 
             print(f'chunks_conversion_timings mean: {np.mean(chunk_conversion_timings)}')
             print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')

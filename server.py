@@ -147,11 +147,8 @@ class SoundCardTCPServer(object):
 
             assert res_write == len(metadata_cmd)
 
-            # NOTE: this wait time is probably required becausethe board takes some time to clear the mem and it gives a read error while it is busy
-            time.sleep(0.2)
-
             try:
-                ret = self._dev.read(0x81, metadata_cmd_reply, 100)
+                ret = self._dev.read(0x81, metadata_cmd_reply, 400)
             except usb.core.USBError as e:
                 # TODO: we probably should try again
 

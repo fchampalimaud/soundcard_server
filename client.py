@@ -22,8 +22,8 @@ def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
 async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
-    sound_index = 2
-    duration = 8
+    sound_index = 4
+    duration = 20
     sample_rate = 96000
     data_type = 0
 
@@ -122,6 +122,7 @@ async def tcp_send_sound_client(loop):
     chunk_sending_timings = []
 
     print(f'chunks to send: {commands_to_send}')
+    print(f'Sending...')
 
     for i in range(1, commands_to_send):
         # write dataIndex
@@ -169,7 +170,8 @@ async def tcp_send_sound_client(loop):
         print('Data successfully sent!')
 
     print(f'total time to send file: {time.time() - initial_time}')
-    print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')
+    print(f'chunks_sending_timings median: {np.median(chunk_sending_timings)}')
+    print(f'chunks_sending_timings average: {np.mean(chunk_sending_timings)}')
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(tcp_send_sound_client(loop))

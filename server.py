@@ -142,10 +142,13 @@ class SoundCardTCPServer(object):
                 # TODO: we probably should try again
                 print(f"something went wrong while writing to the device {e}")
 
-                self.reset()
+                # self.reset()
                 return
 
             assert res_write == len(metadata_cmd)
+
+            # NOTE: this wait time is probably required becausethe board takes some time to clear the mem and it gives a read error while it is busy
+            time.sleep(0.2)
 
             try:
                 ret = self._dev.read(0x81, metadata_cmd_reply, 100)
@@ -154,7 +157,7 @@ class SoundCardTCPServer(object):
 
                 print(f"something went wrong while reading from the device: {e}")
 
-                self.reset()
+                # self.reset()
                 return
 
             # get the random received and the error received from the reply command
@@ -227,7 +230,7 @@ class SoundCardTCPServer(object):
                 start = time.time()
 
                 # send to board
-                # it has to be as an np.array of int32 so that we can get a view as int8s
+                # it has to be as an np.array of int32 and later get a view as int8s
                 rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
                 # copy that random data
                 data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
@@ -250,7 +253,7 @@ class SoundCardTCPServer(object):
                     # TODO: we probably should try again
                     print(f"something went wrong while writing to the device: {e}")
 
-                    self.reset()
+                    # self.reset()
                     return
 
                 # TODO: we probably should try again
@@ -263,7 +266,7 @@ class SoundCardTCPServer(object):
 
                     print(f"something went wrong while reading from the device: {e}")
                     
-                    self.reset()
+                    # self.reset()
                     return
 
                 # get the random received and the error received from the reply command

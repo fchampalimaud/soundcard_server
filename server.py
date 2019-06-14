@@ -27,6 +27,7 @@ class SoundCardTCPServer(object):
     def open(self):
         print('Opening USB connection')
         self._dev = usb.core.find(idVendor=0x04d8, idProduct=0xee6a)
+        print(f'backend for device: {self._dev.backend}')
         if self._dev is None:
             print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
         else:
@@ -35,6 +36,7 @@ class SoundCardTCPServer(object):
             _cfg = self._dev.get_active_configuration()
             if _cfg is None or _cfg.bConfigurationValue != 1:
                 self._dev.set_configuration(1)
+            usb.util.claim_interface(self._dev, 0)
 
     def restart(self):
         print('Restarting USB connection')
@@ -148,7 +150,7 @@ class SoundCardTCPServer(object):
             assert res_write == len(metadata_cmd)
 
             try:
-                ret = self._dev.read(0x81, metadata_cmd_reply, 400)
+                ret = self._dev.read(0x81, metadata_cmd_reply, 1000)
             except usb.core.USBError as e:
                 # TODO: we probably should try again
 
@@ -183,13 +185,18 @@ class SoundCardTCPServer(object):
             # NOTE: Convert data before sending
             # prepare command to send and to receive
             # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
-            data_cmd = np.zeros(4 + int32_size + int32_size + 32768 + 1, dtype=np.int8)
+            package_size = 4 + int32_size + int32_size + 32768 + 1
+            #align = 64
+            #padding = (align - (package_size % align)) % align
+
+            data_cmd = np.zeros(package_size, dtype=np.int8)
             data_cmd_data_index = 4 + int32_size + int32_size
 
             data_cmd[0] = ord('c')
             data_cmd[1] = ord('m')
             data_cmd[2] = ord('d')
             data_cmd[3] = 0x81
+            #data_cmd[package_size - 1] = ord('f')
             data_cmd[-1] = ord('f')
 
             # Data command reply:     'c' 'm' 'd' '0x81' + random + error
@@ -257,7 +264,7 @@ class SoundCardTCPServer(object):
                 assert res_write == len(data_cmd)
 
                 try:
-                    ret = self._dev.read(0x81, data_cmd_reply, 100)
+                    ret = self._dev.read(0x81, data_cmd_reply, 400)
                 except usb.core.USBError as e:
                     # TODO: we probably should try again
 
@@ -285,6 +292,7 @@ class SoundCardTCPServer(object):
 
             print(f'chunks_conversion_timings mean: {np.mean(chunk_conversion_timings)}')
             print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')
+            print(chunk_sending_timings)
 
         writer.write('OK'.encode())
         print('Data request processed successfully!')

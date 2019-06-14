@@ -2,7 +2,8 @@ import asyncio
 import time
 import numpy as np
 
-from pybpod_soundcard_module.utils.generate_sound import generate_sound, WindowConfiguration
+from generate_sound import generate_sound, WindowConfiguration
+
 
 def convert_timestamp(data: bytes):
     data = np.frombuffer(data, dtype=np.int8)
@@ -23,7 +24,7 @@ async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
     sound_index = 4
-    duration = 20
+    duration = 10
     sample_rate = 96000
     data_type = 0
 
@@ -32,7 +33,7 @@ async def tcp_send_sound_client(loop):
                                      left_apply_window_start = True,
                                      left_apply_window_end = False,
                                      left_window_function = 'Blackman',
-                                     right_duration = 0.1,
+                                     right_duration = 0.01,
                                      right_apply_window_start = False,
                                      right_apply_window_end = True,
                                      right_window_function = 'Bartlett')
@@ -47,6 +48,8 @@ async def tcp_send_sound_client(loop):
     int32_size = np.dtype(np.int32).itemsize
     # work with a int8 view of the wave_int (which is int32)
     wave_int8 = wave_int.view(np.int8)
+
+    print(f'size of wave_int8: {len(wave_int8)}')
 
     # get number of commands to send
     sound_file_size_in_samples = len(wave_int8) // 4
@@ -172,6 +175,7 @@ async def tcp_send_sound_client(loop):
     print(f'total time to send file: {time.time() - initial_time}')
     print(f'chunks_sending_timings median: {np.median(chunk_sending_timings)}')
     print(f'chunks_sending_timings average: {np.mean(chunk_sending_timings)}')
+    print(chunk_sending_timings)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(tcp_send_sound_client(loop))

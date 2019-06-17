@@ -290,9 +290,9 @@ class SoundCardTCPServer(object):
 
                 writer.write(bytes(reply))
 
+            print(chunk_sending_timings)
             print(f'chunks_conversion_timings mean: {np.mean(chunk_conversion_timings)}')
             print(f'chunks_sending_timings mean: {np.mean(chunk_sending_timings)}')
-            print(chunk_sending_timings)
 
         writer.write('OK'.encode())
         print('Data request processed successfully!')

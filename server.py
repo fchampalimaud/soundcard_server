@@ -17,7 +17,9 @@ class SoundCardTCPServer(object):
 
     async def start_server(self):
         # init connection to soundcard through the usb connection
-        self.open()
+        if self.open() is False:
+            print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
+            return
 
         # Start server to listen for incoming requests
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
@@ -30,6 +32,9 @@ class SoundCardTCPServer(object):
         backend = libusb.get_backend()
         #backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
         self._dev = usb.core.find(backend=backend, idVendor=0x04d8, idProduct=0xee6a)
+        if self._dev is None:
+            return False
+
         print(f'backend used: {self._dev.backend}')
         if self._dev is None:
             print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
@@ -40,6 +45,8 @@ class SoundCardTCPServer(object):
             if _cfg is None or _cfg.bConfigurationValue != 1:
                 self._dev.set_configuration(1)
             usb.util.claim_interface(self._dev, 0)
+        
+        return True
 
     def restart(self):
         print('Restarting USB connection')

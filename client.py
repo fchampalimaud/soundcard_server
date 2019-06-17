@@ -94,11 +94,8 @@ async def tcp_send_sound_client(loop):
     # calculate checksum and add it to the frame
     header[-1] = header.sum()
 
-    # send preamble first
-    writer.write(bytes(header[:preamble_size]))
-
-    # send remaining of the header
-    writer.write(bytes(header[preamble_size:]))
+    #send header
+    writer.write(bytes(header))
 
     print(f'Start timing between writing complete header and getting reply from server')
     start = time.time()

@@ -228,7 +228,7 @@ class SoundCardTCPServer(object):
                     checksum = sum(reply) & 0xFF
                     reply[-1] = np.array([checksum], dtype=np.int8)
 
-                    # FIXME: try to get another chunk!? or should we simply exit with a reset?
+                    writer.write(bytes(reply))
                     continue
                 
                 start = time.time()

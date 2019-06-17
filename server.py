@@ -2,6 +2,7 @@ import asyncio
 import array
 import usb.core
 import usb.util
+from usb.backend import libusb1 as libusb
 import time
 import math
 import numpy as np
@@ -26,8 +27,10 @@ class SoundCardTCPServer(object):
 
     def open(self):
         print('Opening USB connection')
-        self._dev = usb.core.find(idVendor=0x04d8, idProduct=0xee6a)
-        print(f'backend for device: {self._dev.backend}')
+        backend = libusb.get_backend()
+        #backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
+        self._dev = usb.core.find(backend=backend, idVendor=0x04d8, idProduct=0xee6a)
+        print(f'backend used: {self._dev.backend}')
         if self._dev is None:
             print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
         else:
@@ -249,7 +252,7 @@ class SoundCardTCPServer(object):
                 chunk_conversion_timings.append(time.time() - start)
 
                 start = time.time()
-
+                
                 # send data to device
                 try:
                     res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)

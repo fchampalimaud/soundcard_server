@@ -49,7 +49,8 @@ async def tcp_send_sound_client(loop):
     # work with a int8 view of the wave_int (which is int32)
     wave_int8 = wave_int.view(np.int8)
 
-    print(f'size of wave_int8: {len(wave_int8)}')
+    #with open('testing9secs.bin', 'wb') as f:
+    #        wave_int.tofile(f)
 
     # get number of commands to send
     sound_file_size_in_samples = len(wave_int8) // 4

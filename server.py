@@ -7,6 +7,7 @@ import time
 import math
 import numpy as np
 from asyncio import IncompleteReadError
+from tqdm import tqdm
 
 
 class SoundCardTCPServer(object):
@@ -110,6 +111,11 @@ class SoundCardTCPServer(object):
 
         # TODO: send the first command to the soundcard here
         if checksum == header_bytes[-1]:
+            # get file_size_in_samples
+            sound_file_size_in_samples = np.frombuffer(header_bytes[4:4+4], dtype=np.int32)[0]
+            commands_to_send = int(sound_file_size_in_samples * 4 // 32768 + (
+                1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+
             # NOTE: convert data before sending to board (only needed until new firmware is ready)
             int32_size = np.dtype(np.int32).itemsize
             # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
@@ -164,6 +170,10 @@ class SoundCardTCPServer(object):
 
             assert rand_val_received == rand_val[0]
             assert error_received == 0
+
+            # init progress bar
+            pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
+            pbar.update()
 
             # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
             reply[5: 5 + 6] = self._get_timestamp()
@@ -278,9 +288,11 @@ class SoundCardTCPServer(object):
                 reply[-1] = np.array([checksum], dtype=np.int8)
 
                 writer.write(bytes(reply))
+                pbar.update()
 
-            print(f'\tTime used in converting data: {np.mean(chunk_conversion_timings)} ms')
-            print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} ms')
+            pbar.close()
+            print(f'\tTime used in converting data: {np.mean(chunk_conversion_timings)} s')
+            print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} s')
 
         writer.write('OK'.encode())
         print(f'File successfully sent in {time.time() - initial_time} s')

@@ -23,6 +23,8 @@ class SoundCardTCPServer(object):
             print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
             return
 
+        self.init_data()
+
         # Start server to listen for incoming requests
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
@@ -79,6 +81,16 @@ class SoundCardTCPServer(object):
         if self._dev:
             usb.util.dispose_resources(self._dev)
 
+    def init_data(self):
+        # prepare message to reply to client (5 bytes for preamble, 6 bytes for timestamp and 1 for checksum)
+        self._reply = np.zeros(5 + 6 + 1, dtype=np.int8)
+        # prepare with 'ok' reply by default
+        self._reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
+
+    def clear_data(self):
+        #FIXME: temporary, this should be changed according to the needs
+        self.init_data()
+
     async def _handle_request(self, reader, writer):
         addr = writer.get_extra_info('peername')
  
@@ -101,11 +113,6 @@ class SoundCardTCPServer(object):
             header_size = 2048
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
-
-        # prepare message to reply to client (5 bytes for preamble, 6 bytes for timestamp and 1 for checksum)
-        reply = np.zeros(5 + 6 + 1, dtype=np.int8)
-        # prepare with 'ok' reply by default
-        reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
 
         # calculate checksum for verification
         checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
@@ -178,13 +185,13 @@ class SoundCardTCPServer(object):
         pbar.update()
 
         # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
-        reply[5: 5 + 6] = self._get_timestamp()
+        self._reply[5: 5 + 6] = self._get_timestamp()
         # calculate checksum
-        checksum = sum(reply) & 0xFF
-        reply[-1] = np.array([checksum], dtype=np.int8)
+        checksum = sum(self._reply) & 0xFF
+        self._reply[-1] = np.array([checksum], dtype=np.int8)
 
         # send reply to client
-        writer.write(bytes(reply))
+        writer.write(bytes(self._reply))
 
         data_size = 7 + 4 + 32768 + 1
 
@@ -212,7 +219,7 @@ class SoundCardTCPServer(object):
         chunk_sending_timings = []
 
         #update reply value
-        reply[2] = np.array([132], dtype=np.int8)
+        self._reply[2] = np.array([132], dtype=np.int8)
 
         while True:
             try:
@@ -226,14 +233,14 @@ class SoundCardTCPServer(object):
             # if checksum is different, send reply with error                
             if checksum != chunk[-1]:
                 # send reply with error
-                reply[0] = 10
-                reply[5: 5 + 6] = self._get_timestamp()
-                reply[-1] = 0
+                self._reply[0] = 10
+                self._reply[5: 5 + 6] = self._get_timestamp()
+                self._reply[-1] = 0
                 # calculate checksum
-                checksum = sum(reply) & 0xFF
-                reply[-1] = np.array([checksum], dtype=np.int8)
+                checksum = sum(self._reply) & 0xFF
+                self._reply[-1] = np.array([checksum], dtype=np.int8)
 
-                writer.write(bytes(reply))
+                writer.write(bytes(self._reply))
                 continue
             
             start = time.time()
@@ -283,13 +290,13 @@ class SoundCardTCPServer(object):
 
             chunk_sending_timings.append(time.time() - start)
 
-            reply[5: 5 + 6] = self._get_timestamp()
-            reply[-1] = 0
+            self._reply[5: 5 + 6] = self._get_timestamp()
+            self._reply[-1] = 0
             # calculate checksum
-            checksum = sum(reply) & 0xFF
-            reply[-1] = np.array([checksum], dtype=np.int8)
+            checksum = sum(self._reply) & 0xFF
+            self._reply[-1] = np.array([checksum], dtype=np.int8)
 
-            writer.write(bytes(reply))
+            writer.write(bytes(self._reply))
             pbar.update()
 
         pbar.close()
@@ -299,6 +306,9 @@ class SoundCardTCPServer(object):
         writer.write('OK'.encode())
         print(f'File successfully sent in {time.time() - initial_time} s{os.linesep}')
         print(f'Waiting to receive new requests...{os.linesep}')
+
+        self.clear_data()
+
         return preamble_bytes
     
     def _get_timestamp(self):

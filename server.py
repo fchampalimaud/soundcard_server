@@ -1,3 +1,4 @@
+import os
 import asyncio
 import array
 import usb.core
@@ -109,178 +110,123 @@ class SoundCardTCPServer(object):
         # calculate checksum for verification
         checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
 
-        # TODO: send the first command to the soundcard here
-        if checksum == header_bytes[-1]:
-            # get file_size_in_samples
-            sound_file_size_in_samples = np.frombuffer(header_bytes[4:4+4], dtype=np.int32)[0]
-            commands_to_send = int(sound_file_size_in_samples * 4 // 32768 + (
-                1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+        if checksum != header_bytes[-1]:
+            #TODO: prepare error and send error reply to client
+            return
 
-            # NOTE: convert data before sending to board (only needed until new firmware is ready)
-            int32_size = np.dtype(np.int32).itemsize
-            # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
-            metadata_cmd_header_size = 4 + int32_size + (4 * int32_size)
-            metadata_cmd = np.zeros(metadata_cmd_header_size + 32768 + 2048 + 1, dtype=np.int8)
+        # get total number of commands to send to the board
+        sound_file_size_in_samples = np.frombuffer(header_bytes[4:4+4], dtype=np.int32)[0]
+        commands_to_send = self._get_total_commands_to_send(sound_file_size_in_samples)
 
-            metadata_cmd[0] = ord('c')
-            metadata_cmd[1] = ord('m')
-            metadata_cmd[2] = ord('d')
-            metadata_cmd[3] = 0x80
-            metadata_cmd[-1] = ord('f')
+        # NOTE: convert data before sending to board (only needed until new firmware is ready)
+        int32_size = np.dtype(np.int32).itemsize
+        # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
+        metadata_cmd_header_size = 4 + int32_size + (4 * int32_size)
+        metadata_cmd = np.zeros(metadata_cmd_header_size + 32768 + 2048 + 1, dtype=np.int8)
 
-            rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
-            # copy that random data
-            metadata_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
-            # metadata
-            metadata_cmd[8: 8 + (4 * int32_size)] = np.frombuffer(header_bytes[:4 * int32_size], dtype=np.int8)
-            # add first data block of data to the metadata_cmd
-            metadata_cmd_data_index = metadata_cmd_header_size
-            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + 32768] = np.frombuffer(header_bytes[16: 16 + 32768], dtype=np.int8)
-            # add user metadata (2048 bytes) to metadata_cmd
-            user_metadata_index = metadata_cmd_data_index + 32768
-            metadata_cmd[user_metadata_index: user_metadata_index + 2048] = np.frombuffer(header_bytes[16 + 32768: 16 + 32768 + 2048], dtype=np.int8)
+        metadata_cmd[0] = ord('c')
+        metadata_cmd[1] = ord('m')
+        metadata_cmd[2] = ord('d')
+        metadata_cmd[3] = 0x80
+        metadata_cmd[-1] = ord('f')
 
-            # send info
-            # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error
-            metadata_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+        rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
+        # copy that random data
+        metadata_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+        # metadata
+        metadata_cmd[8: 8 + (4 * int32_size)] = np.frombuffer(header_bytes[:4 * int32_size], dtype=np.int8)
+        # add first data block of data to the metadata_cmd
+        metadata_cmd_data_index = metadata_cmd_header_size
+        metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + 32768] = np.frombuffer(header_bytes[16: 16 + 32768], dtype=np.int8)
+        # add user metadata (2048 bytes) to metadata_cmd
+        user_metadata_index = metadata_cmd_data_index + 32768
+        metadata_cmd[user_metadata_index: user_metadata_index + 2048] = np.frombuffer(header_bytes[16 + 32768: 16 + 32768 + 2048], dtype=np.int8)
 
-            print(f'Start sending data to device...')
-            start = time.time()
-            
-            # send metadata_cmd and get it's reply
+        # send info
+        # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error
+        metadata_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+
+        print(f'Start sending data to device...')
+        start = time.time()
+        
+        # send metadata_cmd and get it's reply
+        try:
+            res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
+        except usb.core.USBError as e:
+            # TODO: we probably should try again
+            print(f"something went wrong while writing to the device {e}")
+            return
+
+        assert res_write == len(metadata_cmd)
+
+        try:
+            ret = self._dev.read(0x81, metadata_cmd_reply, 1000)
+        except usb.core.USBError as e:
+            # TODO: we probably should try again
+            print(f"something went wrong while reading from the device: {e}")
+            return
+
+        # get the random received and the error received from the reply command
+        rand_val_received = int.from_bytes(metadata_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+        error_received = int.from_bytes(metadata_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+
+        assert rand_val_received == rand_val[0]
+        assert error_received == 0
+
+        # init progress bar
+        pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
+        pbar.update()
+
+        # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
+        reply[5: 5 + 6] = self._get_timestamp()
+        # calculate checksum
+        checksum = sum(reply) & 0xFF
+        reply[-1] = np.array([checksum], dtype=np.int8)
+
+        # send reply to client
+        writer.write(bytes(reply))
+
+        data_size = 7 + 4 + 32768 + 1
+
+        # NOTE: Convert data before sending
+        # prepare command to send and to receive
+        # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
+        package_size = 4 + int32_size + int32_size + 32768 + 1
+        #align = 64
+        #padding = (align - (package_size % align)) % align
+
+        data_cmd = np.zeros(package_size, dtype=np.int8)
+        data_cmd_data_index = 4 + int32_size + int32_size
+
+        data_cmd[0] = ord('c')
+        data_cmd[1] = ord('m')
+        data_cmd[2] = ord('d')
+        data_cmd[3] = 0x81
+        #data_cmd[package_size - 1] = ord('f')
+        data_cmd[-1] = ord('f')
+
+        # Data command reply:     'c' 'm' 'd' '0x81' + random + error
+        data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+
+        chunk_conversion_timings = []
+        chunk_sending_timings = []
+
+        #update reply value
+        reply[2] = np.array([132], dtype=np.int8)
+
+        while True:
             try:
-                res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
-            except usb.core.USBError as e:
-                # TODO: we probably should try again
-                print(f"something went wrong while writing to the device {e}")
-                return
+                chunk = await stream.readexactly(data_size)
+            except IncompleteReadError as e:
+                break
 
-            assert res_write == len(metadata_cmd)
+            # calculate checksum for verification
+            checksum = sum(chunk[:-1]) & 0xFF
 
-            try:
-                ret = self._dev.read(0x81, metadata_cmd_reply, 1000)
-            except usb.core.USBError as e:
-                # TODO: we probably should try again
-                print(f"something went wrong while reading from the device: {e}")
-                return
-
-            # get the random received and the error received from the reply command
-            rand_val_received = int.from_bytes(metadata_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-            error_received = int.from_bytes(metadata_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
-
-            assert rand_val_received == rand_val[0]
-            assert error_received == 0
-
-            # init progress bar
-            pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
-            pbar.update()
-
-            # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
-            reply[5: 5 + 6] = self._get_timestamp()
-            # calculate checksum
-            checksum = sum(reply) & 0xFF
-            reply[-1] = np.array([checksum], dtype=np.int8)
-
-            # send reply to client
-            writer.write(bytes(reply))
-
-            data_size = 7 + 4 + 32768 + 1
-
-            # NOTE: Convert data before sending
-            # prepare command to send and to receive
-            # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
-            package_size = 4 + int32_size + int32_size + 32768 + 1
-            #align = 64
-            #padding = (align - (package_size % align)) % align
-
-            data_cmd = np.zeros(package_size, dtype=np.int8)
-            data_cmd_data_index = 4 + int32_size + int32_size
-
-            data_cmd[0] = ord('c')
-            data_cmd[1] = ord('m')
-            data_cmd[2] = ord('d')
-            data_cmd[3] = 0x81
-            #data_cmd[package_size - 1] = ord('f')
-            data_cmd[-1] = ord('f')
-
-            # Data command reply:     'c' 'm' 'd' '0x81' + random + error
-            data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
-
-            chunk_conversion_timings = []
-            chunk_sending_timings = []
-
-            #update reply value
-            reply[2] = np.array([132], dtype=np.int8)
-
-            while True:
-                try:
-                    chunk = await stream.readexactly(data_size)
-                except IncompleteReadError as e:
-                    break
-
-                # calculate checksum for verification
-                checksum = sum(chunk[:-1]) & 0xFF
-
-                # if checksum is different, send reply with error                
-                if checksum != chunk[-1]:
-                    # send reply with error
-                    reply[0] = 10
-                    reply[5: 5 + 6] = self._get_timestamp()
-                    reply[-1] = 0
-                    # calculate checksum
-                    checksum = sum(reply) & 0xFF
-                    reply[-1] = np.array([checksum], dtype=np.int8)
-
-                    writer.write(bytes(reply))
-                    continue
-                
-                start = time.time()
-
-                # send to board
-                # it has to be as an np.array of int32 and later get a view as int8s
-                rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
-                # copy that random data
-                data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
-
-                # write dataIndex to the data_cmd
-                data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
-
-                # write data from chunk to cmd
-                data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
-                data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
-
-                chunk_conversion_timings.append(time.time() - start)
-
-                start = time.time()
-                
-                # send data to device
-                try:
-                    res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
-                except usb.core.USBError as e:
-                    # TODO: we probably should try again
-                    print(f"something went wrong while writing to the device: {e}")
-                    return
-
-                # TODO: we probably should try again
-                assert res_write == len(data_cmd)
-
-                try:
-                    ret = self._dev.read(0x81, data_cmd_reply, 400)
-                except usb.core.USBError as e:
-                    # TODO: we probably should try again
-
-                    print(f"something went wrong while reading from the device: {e}")
-                    return
-
-                # get the random received and the error received from the reply command
-                rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-                error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
-
-                assert rand_val_received == rand_val[0]
-                assert error_received == 0
-
-                chunk_sending_timings.append(time.time() - start)
-
+            # if checksum is different, send reply with error                
+            if checksum != chunk[-1]:
+                # send reply with error
+                reply[0] = 10
                 reply[5: 5 + 6] = self._get_timestamp()
                 reply[-1] = 0
                 # calculate checksum
@@ -288,14 +234,71 @@ class SoundCardTCPServer(object):
                 reply[-1] = np.array([checksum], dtype=np.int8)
 
                 writer.write(bytes(reply))
-                pbar.update()
+                continue
+            
+            start = time.time()
 
-            pbar.close()
-            print(f'\tTime used in converting data: {np.mean(chunk_conversion_timings)} s')
-            print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} s')
+            # send to board
+            # it has to be as an np.array of int32 and later get a view as int8s
+            rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
+            # copy that random data
+            data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+
+            # write dataIndex to the data_cmd
+            data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
+
+            # write data from chunk to cmd
+            data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
+            data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+
+            chunk_conversion_timings.append(time.time() - start)
+
+            start = time.time()
+            
+            # send data to device
+            try:
+                res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
+            except usb.core.USBError as e:
+                # TODO: we probably should try again
+                print(f"something went wrong while writing to the device: {e}")
+                return
+
+            # TODO: we probably should try again
+            assert res_write == len(data_cmd)
+
+            try:
+                ret = self._dev.read(0x81, data_cmd_reply, 400)
+            except usb.core.USBError as e:
+                # TODO: we probably should try again
+
+                print(f"something went wrong while reading from the device: {e}")
+                return
+
+            # get the random received and the error received from the reply command
+            rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+            error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+
+            assert rand_val_received == rand_val[0]
+            assert error_received == 0
+
+            chunk_sending_timings.append(time.time() - start)
+
+            reply[5: 5 + 6] = self._get_timestamp()
+            reply[-1] = 0
+            # calculate checksum
+            checksum = sum(reply) & 0xFF
+            reply[-1] = np.array([checksum], dtype=np.int8)
+
+            writer.write(bytes(reply))
+            pbar.update()
+
+        pbar.close()
+        print(f'\tTime used in converting data: {np.mean(chunk_conversion_timings)} s')
+        print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} s')
 
         writer.write('OK'.encode())
-        print(f'File successfully sent in {time.time() - initial_time} s')
+        print(f'File successfully sent in {time.time() - initial_time} s{os.linesep}')
+        print(f'Waiting to receive new requests...{os.linesep}')
         return preamble_bytes
     
     def _get_timestamp(self):
@@ -310,6 +313,10 @@ class SoundCardTCPServer(object):
         result[4:] = np.array([dec], dtype=np.uint16).view(np.int8)
 
         return result
+    
+    def _get_total_commands_to_send(self, sound_file_size_in_samples):
+        return int(sound_file_size_in_samples * 4 // 32768 + (
+                1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)

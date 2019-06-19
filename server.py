@@ -86,6 +86,26 @@ class SoundCardTCPServer(object):
         self._reply = np.zeros(5 + 6 + 1, dtype=np.int8)
         # prepare with 'ok' reply by default
         self._reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
+        
+        int32_size = np.dtype(np.int32).itemsize
+        # prepare command to send and to receive
+        # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
+        package_size = 4 + int32_size + int32_size + 32768 + 1
+        #align = 64
+        #padding = (align - (package_size % align)) % align
+
+        self._data_cmd = np.zeros(package_size, dtype=np.int8)
+        data_cmd_data_index = 4 + int32_size + int32_size
+
+        self._data_cmd[0] = ord('c')
+        self._data_cmd[1] = ord('m')
+        self._data_cmd[2] = ord('d')
+        self._data_cmd[3] = 0x81
+        #self._data_cmd[package_size - 1] = ord('f')
+        self._data_cmd[-1] = ord('f')
+
+        # Data command reply:     'c' 'm' 'd' '0x81' + random + error
+        self._data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
 
     def clear_data(self):
         #FIXME: temporary, this should be changed according to the needs
@@ -193,31 +213,13 @@ class SoundCardTCPServer(object):
 
         data_size = 7 + 4 + 32768 + 1
 
-        # NOTE: Convert data before sending
-        # prepare command to send and to receive
-        # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
-        package_size = 4 + int32_size + int32_size + 32768 + 1
-        #align = 64
-        #padding = (align - (package_size % align)) % align
-
-        data_cmd = np.zeros(package_size, dtype=np.int8)
-        data_cmd_data_index = 4 + int32_size + int32_size
-
-        data_cmd[0] = ord('c')
-        data_cmd[1] = ord('m')
-        data_cmd[2] = ord('d')
-        data_cmd[3] = 0x81
-        #data_cmd[package_size - 1] = ord('f')
-        data_cmd[-1] = ord('f')
-
-        # Data command reply:     'c' 'm' 'd' '0x81' + random + error
-        data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
-
         chunk_conversion_timings = []
         chunk_sending_timings = []
 
         #update reply value
         self._reply[2] = np.array([132], dtype=np.int8)
+
+        data_cmd_data_index = 4 + int32_size + int32_size
 
         while True:
             try:
@@ -246,14 +248,14 @@ class SoundCardTCPServer(object):
             # it has to be as an np.array of int32 and later get a view as int8s
             rand_val = np.random.randint(-32768, 32768, size=1, dtype=np.int32)
             # copy that random data
-            data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
+            self._data_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
 
             # write dataIndex to the data_cmd
-            data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
+            self._data_cmd[8: 8 + int32_size] = np.frombuffer(chunk[7:7 + int32_size], dtype=np.int32).view(np.int8)
 
             # write data from chunk to cmd
             data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
-            data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+            self._data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
 
             chunk_conversion_timings.append(time.time() - start)
 
@@ -261,17 +263,17 @@ class SoundCardTCPServer(object):
             
             # send data to device
             try:
-                res_write = self._dev.write(0x01, data_cmd.tobytes(), 100)
+                res_write = self._dev.write(0x01, self._data_cmd.tobytes(), 100)
             except usb.core.USBError as e:
                 # TODO: we probably should try again
                 print(f"something went wrong while writing to the device: {e}")
                 return
 
             # TODO: we probably should try again
-            assert res_write == len(data_cmd)
+            assert res_write == len(self._data_cmd)
 
             try:
-                ret = self._dev.read(0x81, data_cmd_reply, 400)
+                ret = self._dev.read(0x81, self._data_cmd_reply, 400)
             except usb.core.USBError as e:
                 # TODO: we probably should try again
 
@@ -279,8 +281,8 @@ class SoundCardTCPServer(object):
                 return
 
             # get the random received and the error received from the reply command
-            rand_val_received = int.from_bytes(data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-            error_received = int.from_bytes(data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
+            rand_val_received = int.from_bytes(self._data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
+            error_received = int.from_bytes(self._data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
 
             assert rand_val_received == rand_val[0]
             assert error_received == 0

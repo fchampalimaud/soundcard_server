@@ -204,12 +204,8 @@ class SoundCardTCPServer(object):
         pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
         pbar.update()
 
-        # if reached here, send ok reply to client (prepare timestamp first, and calculate checksum first)
-        self._reply[5: 5 + 6] = self._get_timestamp()
-        self._reply[-1] = self._calc_checksum(self._reply)
-
-        # send reply to client
-        writer.write(bytes(self._reply))
+        # if reached here, send ok reply to client
+        self._send_reply(writer)
 
         data_size = 7 + 4 + 32768 + 1
 
@@ -232,14 +228,7 @@ class SoundCardTCPServer(object):
 
             # if checksum is different, send reply with error                
             if checksum != chunk[-1]:
-                # send reply with error
-                self._reply[0] = 10
-                self._reply[5: 5 + 6] = self._get_timestamp()
-                # clear last calculated checksum
-                self._reply[-1] = 0
-                self._reply[-1] = self._calc_checksum(self._reply)
-
-                writer.write(bytes(self._reply))
+                self._send_reply(writer, with_error=True)
                 continue
             
             start = time.time()
@@ -289,12 +278,8 @@ class SoundCardTCPServer(object):
 
             chunk_sending_timings.append(time.time() - start)
 
-            self._reply[0] = 2
-            self._reply[5: 5 + 6] = self._get_timestamp()
-            self._reply[-1] = 0
-            self._reply[-1] = self._calc_checksum(self._reply)
+            self._send_reply(writer)
 
-            writer.write(bytes(self._reply))
             pbar.update()
 
         pbar.close()
@@ -329,6 +314,16 @@ class SoundCardTCPServer(object):
     def _calc_checksum(self, data):
         checksum = sum(data) & 0xFF
         return np.array([checksum], dtype=np.int8)
+    
+    def _send_reply(self, writer, with_error=False):
+        # send reply with error
+        self._reply[0] = 10 if with_error else 2
+        self._reply[5: 5 + 6] = self._get_timestamp()
+        # clear last calculated checksum
+        self._reply[-1] = 0
+        self._reply[-1] = self._calc_checksum(self._reply)
+
+        writer.write(bytes(self._reply))
 
 if __name__ == "__main__":
     srv = SoundCardTCPServer("localhost", 9999)

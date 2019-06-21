@@ -5,6 +5,76 @@ import numpy as np
 from generate_sound import generate_sound, WindowConfiguration
 
 
+class ClientSoundCard(object):
+
+    def __init__(self, wave_int):
+        self.wave_int8 = wave_int.view(np.int8)
+        self.int32_size = np.dtype(np.int32).itemsize
+
+        # get number of commands to send
+        self.sound_file_size_in_samples = len(self.wave_int8) // 4
+        self.commands_to_send = int(self.sound_file_size_in_samples * 4 // 32768 + (
+            1 if ((self.sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+
+    
+    def prepare_header(self, with_data=True, with_file_metadata=True):
+        # TODO: change this according to the parameters
+        self._preamble_size = 7
+        self._metadata_size = 16
+        self._data_chunk_size = 32768
+        self._file_metadata_size = 2048
+        self._filemetadata_index = self._preamble_size + self._metadata_size + self._data_chunk_size
+        checksum_size = 1
+        self.header = np.zeros(self._preamble_size + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+        self.header[:self._preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
+
+        self.filemetadata = np.zeros(2048, dtype=np.int8)
+
+    # TODO: perhaps instead of having these methods here we might create a new class
+    def add_sound_filename(self, sound_filename):
+        # TODO: confirm or force conversion to string
+        self._add_filemetadata_info(sound_filename, 0, 169)
+    
+    def add_metadata_filename(self, metadata_filename):
+        # TODO: confirm or force conversion to string
+        self._add_filemetadata_info(metadata_filename, 170, 169)
+        
+
+    def add_description_filename(self, description_filename):
+        # TODO: confirm or force conversion to string and truncate
+        self._add_filemetadata_info(description_filename, 340, 169)
+
+    def add_metadata_filename_content(self, metadata_filename_content):
+        # TODO: confirm or force conversion to string and truncate
+        self._add_filemetadata_info(metadata_filename_content, 512, 1023)
+        
+    def add_description_filename_content(self, description_filename_content):
+        # TODO: confirm or force conversion to string and truncate
+        self._add_filemetadata_info(description_filename_content, 1536, 511)
+        pass
+
+
+    def add_metadata(self, metadata):
+        self.header[self._preamble_size: self._preamble_size + self._metadata_size] = np.array(metadata, dtype=np.int32).view(np.int8)
+
+    def add_filemetadata(self):
+        # add filemetadata to header
+        self.header[self._filemetadata_index: self._filemetadata_index + self._file_metadata_size] = self.filemetadata
+
+    def add_first_data_block(self):
+        # add first block of data to header
+        self.header[self._preamble_size + self._metadata_size:self._preamble_size + self._metadata_size + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
+
+    def update_checksum(self):
+        self.header[-1] = self.header.sum()
+
+    def _add_filemetadata_info(self, data_str, start_index, max_value):
+        data_array = np.array(data_str, 'c').view(dtype=np.int8)
+        data_size = min(len(data_array), max_value)
+        self.filemetadata[start_index: start_index + data_size] = data_array[:data_size]
+
+
+
 def convert_timestamp(data: bytes):
     data = np.frombuffer(data, dtype=np.int8)
 
@@ -14,17 +84,11 @@ def convert_timestamp(data: bytes):
     res = integer + (dec * 10.0**-6 * 32)
     return res
 
-def add_filemetadata_info(filemetadata, data_str, start_index, max_value):
-    data_array = np.array(data_str, 'c').view(dtype=np.int8)
-    data_size = min(len(data_array), max_value)
-    filemetadata[start_index: start_index + data_size] = data_array[:data_size]
-
-
 async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
     sound_index = 4
-    duration = 10
+    duration = 8
     sample_rate = 96000
     data_type = 0
 
@@ -45,65 +109,47 @@ async def tcp_send_sound_client(loop):
                               window_configuration=window_config
                               )
 
-    int32_size = np.dtype(np.int32).itemsize
-    # work with a int8 view of the wave_int (which is int32)
-    wave_int8 = wave_int.view(np.int8)
+    client = ClientSoundCard(wave_int)
+    client.prepare_header(with_data=True, with_file_metadata=True)
+    client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
 
     #with open('testing9secs.bin', 'wb') as f:
-    #        wave_int.tofile(f)
-
-    # get number of commands to send
-    sound_file_size_in_samples = len(wave_int8) // 4
-    commands_to_send = int(sound_file_size_in_samples * 4 // 32768 + (
-        1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+    #        wave_int8.tofile(f)
 
     initial_time = time.time()
 
     # start creating message to send according to the protocol
-    preamble_size = 7
-    metadata_size = 16
-    data_chunk_size = 32768
-    file_metadata_size = 2048
-    checksum_size = 1
-    header = np.zeros(preamble_size + metadata_size + data_chunk_size + file_metadata_size + checksum_size, dtype=np.int8)
-    header[:preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
-
-    # TODO: this should be extracted from here
-    metadata = np.array([sound_index, sound_file_size_in_samples, sample_rate, data_type], dtype=np.int32)
-    header[preamble_size: preamble_size + metadata_size] = metadata.view(np.int8)
-
-    filemetadata_index = preamble_size + metadata_size + data_chunk_size
-    filemetadata = np.zeros(2048, dtype=np.int8)
-
     sound_filename_str = 'testing_filename'
     metadata_filename_str = 'testing_metadata_name'
     description_filename_str = 'testing_description_name'
     metadata_filename_content_str = 'testing_content_from_metadata_filename'
     description_filename_content_str = 'testing_content_from_description_filename'
 
-    add_filemetadata_info(filemetadata, sound_filename_str, 0, 169)
-    add_filemetadata_info(filemetadata, metadata_filename_str, 170, 169)
-    add_filemetadata_info(filemetadata, description_filename_str, 340, 169)
-    add_filemetadata_info(filemetadata, metadata_filename_content_str, 512, 1023)
-    add_filemetadata_info(filemetadata, description_filename_content_str, 1536, 511)
+    client.add_sound_filename(sound_filename_str)
+    client.add_metadata_filename(metadata_filename_str)
+    client.add_description_filename(description_filename_str)
+    client.add_metadata_filename_content( metadata_filename_content_str)
+    client.add_description_filename_content(description_filename_content_str)
 
-    # add filemetadata to header
-    header[filemetadata_index: filemetadata_index + file_metadata_size] = filemetadata
-
-    # add first block of data to header
-    header[preamble_size + metadata_size:preamble_size + metadata_size + data_chunk_size] = wave_int8[:data_chunk_size]
-    # calculate checksum and add it to the frame
-    header[-1] = header.sum()
+    client.add_filemetadata()
+    client.add_first_data_block()
+    client.update_checksum()
 
     #send header
-    writer.write(bytes(header))
+    writer.write(bytes(client.header))
+
+    int32_size = client.int32_size
+    # work with a int8 view of the wave_int (which is int32)
+    wave_int8 = client.wave_int8
 
     print(f'Start timing between writing complete header and getting reply from server')
     start = time.time()
 
-    # receive ok
+    # receive reply
     reply_size = 5 + 6 + 1
     reply = await reader.readexactly(reply_size)
+
+    # TODO: check for error
     
     print(f'Received reply from server after writing complete header. timing: {time.time() - start}')
 
@@ -118,9 +164,13 @@ async def tcp_send_sound_client(loop):
     data_cmd = np.zeros(7 + int32_size + 32768 + 1, dtype=np.int8)
     data_cmd_data_index = 7
     # add data_cmd header
+    preamble_size = 7
     data_cmd[:preamble_size] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
     chunk_sending_timings = []
+
+    # get number of commands to send
+    commands_to_send = client.commands_to_send
 
     print(f'chunks to send: {commands_to_send}')
     print(f'Sending...')
@@ -173,7 +223,6 @@ async def tcp_send_sound_client(loop):
     print(f'total time to send file: {time.time() - initial_time}')
     print(f'chunks_sending_timings median: {np.median(chunk_sending_timings)}')
     print(f'chunks_sending_timings average: {np.mean(chunk_sending_timings)}')
-    print(chunk_sending_timings)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(tcp_send_sound_client(loop))

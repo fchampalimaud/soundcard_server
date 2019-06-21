@@ -138,10 +138,6 @@ async def tcp_send_sound_client(loop):
     #send header
     writer.write(bytes(client.header))
 
-    int32_size = client.int32_size
-    # work with a int8 view of the wave_int (which is int32)
-    wave_int8 = client.wave_int8
-
     print(f'Start timing between writing complete header and getting reply from server')
     start = time.time()
 
@@ -161,7 +157,7 @@ async def tcp_send_sound_client(loop):
 
     # send rest of data
     # prepare data_cmd
-    data_cmd = np.zeros(7 + int32_size + 32768 + 1, dtype=np.int8)
+    data_cmd = np.zeros(7 + client.int32_size + 32768 + 1, dtype=np.int8)
     data_cmd_data_index = 7
     # add data_cmd header
     preamble_size = 7
@@ -177,29 +173,27 @@ async def tcp_send_sound_client(loop):
 
     for i in range(1, commands_to_send):
         # write dataIndex
-        data_cmd[7: 7 + int32_size] = np.array([i], dtype=np.int32).view(np.int8)
+        data_cmd[7: 7 + client.int32_size] = np.array([i], dtype=np.int32).view(np.int8)
 
         # write data from wave_int to cmd
         wave_idx = i * 32768
-        data_block = wave_int8[wave_idx: wave_idx + 32768]
+        data_block = client.wave_int8[wave_idx: wave_idx + 32768]
 
         # clean the remaining elements for the last chunk which might be smaller than 32K
         if i == commands_to_send - 1:
             data_cmd[data_cmd_data_index:] = 0
         data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = data_block
 
-        # clean last byte so we can calculate the correct checksum
-        data_cmd[-1] = 0
-        # sum all bytes with overflow to calculate the checksum
-        data_cmd[-1] = data_cmd.sum(dtype=np.int8)
+        # calculate the checksum
+        data_cmd[-1] = data_cmd[:-1].sum(dtype=np.int8)
+
+        start = time.time()
 
         # write to socket
         writer.write(bytes(data_cmd))
 
         # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
         await writer.drain()
-
-        start = time.time()
 
         # receive ok
         reply_size = 5 + 6 + 1
@@ -209,7 +203,7 @@ async def tcp_send_sound_client(loop):
 
         timestamp = convert_timestamp(reply[5: 5 + 6])
 
-        # if reply is an error, simply return (ou maybe try again would be more adequate)
+        #FIXME: if reply is an error, simply return (ou maybe try again would be more adequate)
         if reply[0] is not 2:
             return
 

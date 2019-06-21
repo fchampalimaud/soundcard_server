@@ -127,12 +127,14 @@ class SoundCardTCPServer(object):
         # size of header will depend on preamble data (index 4 defines type of frame)
         frame_type = preamble_bytes[4]
         header_size = 7 + 16 + 1
+        metadata_index = 7
         if frame_type == 128:
             header_size += 32768 + 2048
         elif frame_type == 129:
             header_size = 2048
         elif preamble_bytes[2] == 130:
             header_size = 22
+            metadata_index = 5
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
@@ -145,7 +147,7 @@ class SoundCardTCPServer(object):
             return
 
         # get total number of commands to send to the board
-        sound_file_size_in_samples = np.frombuffer(header_bytes[4:4+4], dtype=np.int32)[0]
+        sound_file_size_in_samples = np.frombuffer(complete_header[metadata_index + 4: metadata_index + 4 + 4], dtype=np.int32)[0]
         commands_to_send = self._get_total_commands_to_send(sound_file_size_in_samples)
 
         # NOTE: convert data before sending to board (only needed until new firmware is ready)

@@ -131,13 +131,16 @@ class SoundCardTCPServer(object):
             header_size += 32768 + 2048
         elif frame_type == 129:
             header_size = 2048
+        elif preamble_bytes[2] == 130:
+            header_size = 22
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
-        # calculate checksum for verification
-        checksum = sum(preamble_bytes + header_bytes[:-1]) & 0xFF
+        complete_header = preamble_bytes + header_bytes
 
-        if checksum != header_bytes[-1]:
+        # calculate checksum for verification
+        checksum = self._calc_checksum(complete_header[:-1])
+        if checksum != complete_header[-1]:
             #TODO: prepare error and send error reply to client
             return
 
@@ -224,7 +227,7 @@ class SoundCardTCPServer(object):
                 break
 
             # calculate checksum for verification
-            checksum = sum(chunk[:-1]) & 0xFF
+            checksum = self._calc_checksum(chunk[:-1])
 
             # if checksum is different, send reply with error                
             if checksum != chunk[-1]:
@@ -312,16 +315,14 @@ class SoundCardTCPServer(object):
                 1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
 
     def _calc_checksum(self, data):
-        checksum = sum(data) & 0xFF
-        return np.array([checksum], dtype=np.int8)
+        return sum(data) & 0xFF
     
     def _send_reply(self, writer, with_error=False):
         # send reply with error
         self._reply[0] = 10 if with_error else 2
         self._reply[5: 5 + 6] = self._get_timestamp()
-        # clear last calculated checksum
-        self._reply[-1] = 0
-        self._reply[-1] = self._calc_checksum(self._reply)
+        checksum = self._calc_checksum(self._reply[:-1])
+        self._reply[-1] = np.array([checksum], dtype=np.int8)
 
         writer.write(bytes(self._reply))
 

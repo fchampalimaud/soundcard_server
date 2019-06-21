@@ -15,7 +15,6 @@ class ClientSoundCard(object):
         self.sound_file_size_in_samples = len(self.wave_int8) // 4
         self.commands_to_send = int(self.sound_file_size_in_samples * 4 // 32768 + (
             1 if ((self.sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
-
     
     def prepare_header(self, with_data=True, with_file_metadata=True):
         # TODO: change this according to the parameters
@@ -29,6 +28,12 @@ class ClientSoundCard(object):
         self.header[:self._preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
 
         self.filemetadata = np.zeros(2048, dtype=np.int8)
+
+        # prepare data_cmd
+        self.data_cmd = np.zeros(7 + self.int32_size + 32768 + 1, dtype=np.int8)
+        self._data_cmd_data_index = 7
+        # add data_cmd header
+        self.data_cmd[:self._preamble_size] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
     # TODO: perhaps instead of having these methods here we might create a new class
     def add_sound_filename(self, sound_filename):
@@ -53,20 +58,33 @@ class ClientSoundCard(object):
         self._add_filemetadata_info(description_filename_content, 1536, 511)
         pass
 
-
     def add_metadata(self, metadata):
         self.header[self._preamble_size: self._preamble_size + self._metadata_size] = np.array(metadata, dtype=np.int32).view(np.int8)
 
     def add_filemetadata(self):
-        # add filemetadata to header
         self.header[self._filemetadata_index: self._filemetadata_index + self._file_metadata_size] = self.filemetadata
 
     def add_first_data_block(self):
-        # add first block of data to header
         self.header[self._preamble_size + self._metadata_size:self._preamble_size + self._metadata_size + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
 
-    def update_checksum(self):
+    def update_header_checksum(self):
         self.header[-1] = self.header.sum()
+
+    def write_data_index(self, index):
+        self.data_cmd[self._preamble_size: self._preamble_size + self.int32_size] = np.array([index], dtype=np.int32).view(np.int8)
+
+    def clean_data_cmd(self):
+        self.data_cmd[self._data_cmd_data_index:] = 0
+    
+    def write_data_block(self, index):
+        # write data from wave_int to cmd
+        wave_idx = index * 32768
+        data_block = self.wave_int8[wave_idx: wave_idx + 32768]
+
+        self.data_cmd[self._data_cmd_data_index: self._data_cmd_data_index + len(data_block)] = data_block
+
+    def update_data_checksum(self):
+        self.data_cmd[-1] = self.data_cmd[:-1].sum(dtype=np.int8)
 
     def _add_filemetadata_info(self, data_str, start_index, max_value):
         data_array = np.array(data_str, 'c').view(dtype=np.int8)
@@ -133,7 +151,7 @@ async def tcp_send_sound_client(loop):
 
     client.add_filemetadata()
     client.add_first_data_block()
-    client.update_checksum()
+    client.update_header_checksum()
 
     #send header
     writer.write(bytes(client.header))
@@ -156,13 +174,6 @@ async def tcp_send_sound_client(loop):
         return
 
     # send rest of data
-    # prepare data_cmd
-    data_cmd = np.zeros(7 + client.int32_size + 32768 + 1, dtype=np.int8)
-    data_cmd_data_index = 7
-    # add data_cmd header
-    preamble_size = 7
-    data_cmd[:preamble_size] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
-
     chunk_sending_timings = []
 
     # get number of commands to send
@@ -172,25 +183,18 @@ async def tcp_send_sound_client(loop):
     print(f'Sending...')
 
     for i in range(1, commands_to_send):
-        # write dataIndex
-        data_cmd[7: 7 + client.int32_size] = np.array([i], dtype=np.int32).view(np.int8)
-
-        # write data from wave_int to cmd
-        wave_idx = i * 32768
-        data_block = client.wave_int8[wave_idx: wave_idx + 32768]
-
         # clean the remaining elements for the last chunk which might be smaller than 32K
         if i == commands_to_send - 1:
-            data_cmd[data_cmd_data_index:] = 0
-        data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = data_block
+            client.clean_data_cmd()
 
-        # calculate the checksum
-        data_cmd[-1] = data_cmd[:-1].sum(dtype=np.int8)
+        client.write_data_index(i)
+        client.write_data_block(i)
+        client.update_data_checksum()
 
         start = time.time()
 
         # write to socket
-        writer.write(bytes(data_cmd))
+        writer.write(bytes(client.data_cmd))
 
         # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
         await writer.drain()

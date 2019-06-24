@@ -18,22 +18,35 @@ class ClientSoundCard(object):
     
     def prepare_header(self, with_data=True, with_file_metadata=True):
         # TODO: change this according to the parameters
-        self._preamble_size = 7
         self._metadata_size = 16
         self._data_chunk_size = 32768
         self._file_metadata_size = 2048
-        self._filemetadata_index = self._preamble_size + self._metadata_size + self._data_chunk_size
         checksum_size = 1
-        self.header = np.zeros(self._preamble_size + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
-        self.header[:self._preamble_size] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
+       
+        self._metadata_index = 5 if with_data == False and with_file_metadata == False else 7
+        self._preamble_size = self._metadata_index
+
+        self._data_index = self._metadata_index + self._metadata_size
+        self._filemetadata_index = self._metadata_index + self._metadata_size + self._data_chunk_size
+
+        if with_data == True and with_file_metadata == True:
+            self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+            self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
+        elif with_data == False and with_file_metadata == True:
+            self.header = np.zeros(self._metadata_index + self._metadata_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+            self.header[:self._metadata_index] = [2, 255, int('0x14', 16), int('0x08', 16), 129, 255, 1 ]
+        elif with_data == False and with_file_metadata == False:
+            self.header = np.zeros(self._metadata_index + self._metadata_size + checksum_size, dtype=np.int8)
+            self.header[:self._metadata_index] = [2, 20, 130, 255, 1]
 
         self.filemetadata = np.zeros(2048, dtype=np.int8)
 
         # prepare data_cmd
         self.data_cmd = np.zeros(7 + self.int32_size + 32768 + 1, dtype=np.int8)
         self._data_cmd_data_index = 7
+        self._data_cmd_data_chunk_index = self._data_cmd_data_index + self.int32_size
         # add data_cmd header
-        self.data_cmd[:self._preamble_size] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
+        self.data_cmd[:self._metadata_index] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
     # TODO: perhaps instead of having these methods here we might create a new class
     def add_sound_filename(self, sound_filename):
@@ -59,19 +72,19 @@ class ClientSoundCard(object):
         pass
 
     def add_metadata(self, metadata):
-        self.header[self._preamble_size: self._preamble_size + self._metadata_size] = np.array(metadata, dtype=np.int32).view(np.int8)
+        self.header[self._metadata_index: self._metadata_index + self._metadata_size] = np.array(metadata, dtype=np.int32).view(np.int8)
 
     def add_filemetadata(self):
         self.header[self._filemetadata_index: self._filemetadata_index + self._file_metadata_size] = self.filemetadata
 
     def add_first_data_block(self):
-        self.header[self._preamble_size + self._metadata_size:self._preamble_size + self._metadata_size + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
+        self.header[self._data_index: self._data_index + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
 
     def update_header_checksum(self):
         self.header[-1] = self.header.sum()
 
     def write_data_index(self, index):
-        self.data_cmd[self._preamble_size: self._preamble_size + self.int32_size] = np.array([index], dtype=np.int32).view(np.int8)
+        self.data_cmd[self._data_cmd_data_index: self._data_cmd_data_index + self.int32_size] = np.array([index], dtype=np.int32).view(np.int8)
 
     def clean_data_cmd(self):
         self.data_cmd[self._data_cmd_data_index:] = 0

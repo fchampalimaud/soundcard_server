@@ -120,6 +120,9 @@ class SoundCardTCPServer(object):
     async def _recv_data(self, writer, stream):
         start = initial_time = time.time()
 
+        with_data = True
+        with_file_metadata = True
+
         # get first 7 bytes to know which type of frame we are going to receive
         preamble_size = 7
         preamble_bytes = await stream.readexactly(preamble_size)
@@ -131,10 +134,13 @@ class SoundCardTCPServer(object):
         if frame_type == 128:
             header_size += 32768 + 2048
         elif frame_type == 129:
-            header_size = 2048
+            header_size += 2048
+            with_data = False
         elif preamble_bytes[2] == 130:
             header_size = 22
             metadata_index = 5
+            with_data = False
+            with_file_metadata = False
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
@@ -153,8 +159,15 @@ class SoundCardTCPServer(object):
         # NOTE: convert data before sending to board (only needed until new firmware is ready)
         int32_size = np.dtype(np.int32).itemsize
         # Metadata command length: 'c' 'm' 'd' '0x80' + random + metadata + 32768 + 2048 + 'f'
-        metadata_cmd_header_size = 4 + int32_size + (4 * int32_size)
-        metadata_cmd = np.zeros(metadata_cmd_header_size + 32768 + 2048 + 1, dtype=np.int8)
+        metadata_size = 4 * int32_size
+        data_size = 32768
+        data_index = preamble_size + metadata_size
+        file_metadata_size = 2048
+        file_metadata_index = data_index + data_size
+
+
+        metadata_cmd_header_size = 4 + int32_size + metadata_size
+        metadata_cmd = np.zeros(metadata_cmd_header_size + data_size + file_metadata_size + 1, dtype=np.int8)
 
         metadata_cmd[0] = ord('c')
         metadata_cmd[1] = ord('m')
@@ -166,13 +179,24 @@ class SoundCardTCPServer(object):
         # copy that random data
         metadata_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
         # metadata
-        metadata_cmd[8: 8 + (4 * int32_size)] = np.frombuffer(header_bytes[:4 * int32_size], dtype=np.int8)
+        metadata_cmd[8: 8 + (metadata_size)] = np.frombuffer(complete_header[metadata_index: metadata_index + metadata_size], dtype=np.int8)
+        
         # add first data block of data to the metadata_cmd
-        metadata_cmd_data_index = metadata_cmd_header_size
-        metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + 32768] = np.frombuffer(header_bytes[16: 16 + 32768], dtype=np.int8)
+        if with_data == True:
+            metadata_cmd_data_index = metadata_cmd_header_size
+            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(complete_header[data_index: data_index + data_size], dtype=np.int8)
+        else:
+            # TODO: send reply to client and read the first block of data and add it to the first command sent here
+            # TODO: also, wait for one less command on the while loop later
+            pass
+        
         # add user metadata (2048 bytes) to metadata_cmd
-        user_metadata_index = metadata_cmd_data_index + 32768
-        metadata_cmd[user_metadata_index: user_metadata_index + 2048] = np.frombuffer(header_bytes[16 + 32768: 16 + 32768 + 2048], dtype=np.int8)
+        if with_file_metadata == True:
+            user_metadata_index = metadata_cmd_data_index + data_size
+            metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(complete_header[file_metadata_index: file_metadata_index + file_metadata_size], dtype=np.int8)
+        else:
+            # TODO: simply ignore and leave zeros in the command
+            pass
 
         # send info
         # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error

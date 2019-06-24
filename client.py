@@ -94,7 +94,7 @@ class ClientSoundCard(object):
         wave_idx = index * 32768
         data_block = self.wave_int8[wave_idx: wave_idx + 32768]
 
-        self.data_cmd[self._data_cmd_data_index: self._data_cmd_data_index + len(data_block)] = data_block
+        self.data_cmd[self._data_cmd_data_chunk_index: self._data_cmd_data_chunk_index + len(data_block)] = data_block
 
     def update_data_checksum(self):
         self.data_cmd[-1] = self.data_cmd[:-1].sum(dtype=np.int8)

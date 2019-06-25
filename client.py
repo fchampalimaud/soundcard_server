@@ -46,7 +46,7 @@ class ClientSoundCard(object):
         self._data_cmd_data_index = 7
         self._data_cmd_data_chunk_index = self._data_cmd_data_index + self.int32_size
         # add data_cmd header
-        self.data_cmd[:self._metadata_index] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
+        self.data_cmd[:self._data_cmd_data_index] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
     # TODO: perhaps instead of having these methods here we might create a new class
     def add_sound_filename(self, sound_filename):
@@ -119,7 +119,7 @@ async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
     sound_index = 4
-    duration = 8
+    duration = 12
     sample_rate = 96000
     data_type = 0
 
@@ -235,6 +235,7 @@ async def tcp_send_sound_client(loop):
     print(f'chunks_sending_timings median: {np.median(chunk_sending_timings)}')
     print(f'chunks_sending_timings average: {np.mean(chunk_sending_timings)}')
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(tcp_send_sound_client(loop))
-loop.close()
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(tcp_send_sound_client(loop))
+    loop.close()

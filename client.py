@@ -49,25 +49,19 @@ class ClientSoundCard(object):
         self.data_cmd[:self._data_cmd_data_index] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
     # TODO: perhaps instead of having these methods here we might create a new class
-    def add_sound_filename(self, sound_filename):
-        # TODO: confirm or force conversion to string
+    def add_sound_filename(self, sound_filename: str):
         self._add_filemetadata_info(sound_filename, 0, 169)
-    
-    def add_metadata_filename(self, metadata_filename):
-        # TODO: confirm or force conversion to string
-        self._add_filemetadata_info(metadata_filename, 170, 169)
-        
 
-    def add_description_filename(self, description_filename):
-        # TODO: confirm or force conversion to string and truncate
+    def add_metadata_filename(self, metadata_filename: str):
+        self._add_filemetadata_info(metadata_filename, 170, 169)
+
+    def add_description_filename(self, description_filename: str):
         self._add_filemetadata_info(description_filename, 340, 169)
 
-    def add_metadata_filename_content(self, metadata_filename_content):
-        # TODO: confirm or force conversion to string and truncate
+    def add_metadata_filename_content(self, metadata_filename_content: str):
         self._add_filemetadata_info(metadata_filename_content, 512, 1023)
-        
-    def add_description_filename_content(self, description_filename_content):
-        # TODO: confirm or force conversion to string and truncate
+
+    def add_description_filename_content(self, description_filename_content: str):
         self._add_filemetadata_info(description_filename_content, 1536, 511)
         pass
 
@@ -115,6 +109,7 @@ def convert_timestamp(data: bytes):
     res = integer + (dec * 10.0**-6 * 32)
     return res
 
+
 async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
@@ -124,14 +119,14 @@ async def tcp_send_sound_client(loop):
     data_type = 0
 
     # generate sound
-    window_config = WindowConfiguration( left_duration = 0,
-                                     left_apply_window_start = True,
-                                     left_apply_window_end = False,
-                                     left_window_function = 'Blackman',
-                                     right_duration = 0.01,
-                                     right_apply_window_start = False,
-                                     right_apply_window_end = True,
-                                     right_window_function = 'Bartlett')
+    window_config = WindowConfiguration(left_duration=0,
+                                        left_apply_window_start=True,
+                                        left_apply_window_end=False,
+                                        left_window_function='Blackman',
+                                        right_duration=0.01,
+                                        right_apply_window_start=False,
+                                        right_apply_window_end=True,
+                                        right_window_function='Bartlett')
 
     wave_int = generate_sound(fs=sample_rate,                 # sample rate in Hz
                               duration=duration,              # duration of the sound in seconds
@@ -183,7 +178,7 @@ async def tcp_send_sound_client(loop):
     timestamp = convert_timestamp(reply[5: 5 + 6])
 
     # if reply is an error, simply return (ou maybe try again would be more adequate)
-    if reply[0] is not 2:
+    if reply[0] != 2:
         return
 
     # send rest of data
@@ -215,15 +210,14 @@ async def tcp_send_sound_client(loop):
         # receive ok
         reply_size = 5 + 6 + 1
         reply = await reader.readexactly(reply_size)
-        
+
         chunk_sending_timings.append(time.time() - start)
 
         timestamp = convert_timestamp(reply[5: 5 + 6])
 
-        #FIXME: if reply is an error, simply return (ou maybe try again would be more adequate)
-        if reply[0] is not 2:
+        # FIXME: if reply is an error, simply return (ou maybe try again would be more adequate)
+        if reply[0] != 2:
             return
-
 
     writer.write_eof()
 

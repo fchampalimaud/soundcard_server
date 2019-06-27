@@ -23,19 +23,20 @@ class ClientSoundCard(object):
         self._file_metadata_size = 2048
         checksum_size = 1
 
-        self._metadata_index = 5 if with_data is False and with_file_metadata is False else 7
+        self._metadata_index = 5 if with_file_metadata is False else 7
         self._preamble_size = self._metadata_index
 
         self._data_index = self._metadata_index + self._metadata_size
         self._filemetadata_index = self._metadata_index + self._metadata_size + self._data_chunk_size
 
-        if with_data is True and with_file_metadata is True:
-            self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
-            self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1]
-        elif with_data is False and with_file_metadata is True:
-            self.header = np.zeros(self._metadata_index + self._metadata_size + self._file_metadata_size + checksum_size, dtype=np.int8)
-            self.header[:self._metadata_index] = [2, 255, int('0x14', 16), int('0x08', 16), 129, 255, 1]
-        elif with_data is False and with_file_metadata is False:
+        if with_file_metadata is True:
+            if with_data is True:
+                self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+                self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1]
+            else:
+                self.header = np.zeros(self._metadata_index + self._metadata_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+                self.header[:self._metadata_index] = [2, 255, int('0x14', 16), int('0x08', 16), 129, 255, 1]
+        else:
             self.header = np.zeros(self._metadata_index + self._metadata_size + checksum_size, dtype=np.int8)
             self.header[:self._metadata_index] = [2, 20, 130, 255, 1]
 

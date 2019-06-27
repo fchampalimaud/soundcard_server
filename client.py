@@ -73,6 +73,8 @@ class ClientSoundCard(object):
         self.header[self._filemetadata_index: self._filemetadata_index + self._file_metadata_size] = self.filemetadata
 
     def add_first_data_block(self):
+        if self._metadata_index == 5:
+            return
         self.header[self._data_index: self._data_index + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
 
     def update_header_checksum(self):
@@ -137,7 +139,7 @@ async def tcp_send_sound_client(loop):
                               )
 
     client = ClientSoundCard(wave_int)
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    client.prepare_header(with_data=True, with_file_metadata=False)
     client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
 
     # with open('testing9secs.bin', 'wb') as f:
@@ -146,19 +148,19 @@ async def tcp_send_sound_client(loop):
     initial_time = time.time()
 
     # start creating message to send according to the protocol
-    sound_filename_str = 'testing_filename'
-    metadata_filename_str = 'testing_metadata_name'
-    description_filename_str = 'testing_description_name'
-    metadata_filename_content_str = 'testing_content_from_metadata_filename'
-    description_filename_content_str = 'testing_content_from_description_filename'
+    # sound_filename_str = 'testing_filename'
+    # metadata_filename_str = 'testing_metadata_name'
+    # description_filename_str = 'testing_description_name'
+    # metadata_filename_content_str = 'testing_content_from_metadata_filename'
+    # description_filename_content_str = 'testing_content_from_description_filename'
 
-    client.add_sound_filename(sound_filename_str)
-    client.add_metadata_filename(metadata_filename_str)
-    client.add_description_filename(description_filename_str)
-    client.add_metadata_filename_content(metadata_filename_content_str)
-    client.add_description_filename_content(description_filename_content_str)
+    # client.add_sound_filename(sound_filename_str)
+    # client.add_metadata_filename(metadata_filename_str)
+    # client.add_description_filename(description_filename_str)
+    # client.add_metadata_filename_content(metadata_filename_content_str)
+    # client.add_description_filename_content(description_filename_content_str)
 
-    client.add_filemetadata()
+    # client.add_filemetadata()
     client.add_first_data_block()
     client.update_header_checksum()
 

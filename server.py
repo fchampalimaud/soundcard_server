@@ -12,10 +12,10 @@ from tqdm import tqdm
 
 
 class SoundCardTCPServer(object):
-    
+
     def __init__(self, addr, port):
-      self.address = addr
-      self.port = port
+        self.address = addr
+        self.port = port
 
     async def start_server(self):
         # init connection to soundcard through the usb connection
@@ -34,14 +34,14 @@ class SoundCardTCPServer(object):
     def open(self):
         print('Opening USB connection')
         backend = libusb.get_backend()
-        #backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
+        # backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
         self._dev = usb.core.find(backend=backend, idVendor=0x04d8, idProduct=0xee6a)
         if self._dev is None:
             return False
 
         print(f'backend used: {self._dev.backend}')
         if self._dev is None:
-            print( 'SoundCard not found. Please connect it to the USB port before proceeding.')
+            print('SoundCard not found. Please connect it to the USB port before proceeding.')
         else:
             # set the active configuration. With no arguments, the first configuration will be the active one
             # note: some devices reset when setting an already selected configuration so we should check for it before
@@ -49,7 +49,7 @@ class SoundCardTCPServer(object):
             if _cfg is None or _cfg.bConfigurationValue != 1:
                 self._dev.set_configuration(1)
             usb.util.claim_interface(self._dev, 0)
-        
+
         return True
 
     def restart(self):
@@ -86,13 +86,13 @@ class SoundCardTCPServer(object):
         self._reply = np.zeros(5 + 6 + 1, dtype=np.int8)
         # prepare with 'ok' reply by default
         self._reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
-        
+
         int32_size = np.dtype(np.int32).itemsize
         # prepare command to send and to receive
         # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
         package_size = 4 + int32_size + int32_size + 32768 + 1
-        #align = 64
-        #padding = (align - (package_size % align)) % align
+        # align = 64
+        # padding = (align - (package_size % align)) % align
 
         self._data_cmd = np.zeros(package_size, dtype=np.int8)
         data_cmd_data_index = 4 + int32_size + int32_size
@@ -101,19 +101,19 @@ class SoundCardTCPServer(object):
         self._data_cmd[1] = ord('m')
         self._data_cmd[2] = ord('d')
         self._data_cmd[3] = 0x81
-        #self._data_cmd[package_size - 1] = ord('f')
+        # self._data_cmd[package_size - 1] = ord('f')
         self._data_cmd[-1] = ord('f')
 
         # Data command reply:     'c' 'm' 'd' '0x81' + random + error
         self._data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
 
     def clear_data(self):
-        #FIXME: temporary, this should be changed according to the needs
+        # FIXME: temporary, this should be changed according to the needs
         self.init_data()
 
     async def _handle_request(self, reader, writer):
         addr = writer.get_extra_info('peername')
- 
+
         print(f'Request received from {addr}. Handling received data.')
         msg = await self._recv_data(writer, reader)
 
@@ -149,7 +149,7 @@ class SoundCardTCPServer(object):
         # calculate checksum for verification
         checksum = self._calc_checksum(complete_header[:-1])
         if checksum != complete_header[-1]:
-            #TODO: prepare error and send error reply to client
+            # TODO: prepare error and send error reply to client
             return
 
         # get total number of commands to send to the board
@@ -165,7 +165,6 @@ class SoundCardTCPServer(object):
         file_metadata_size = 2048
         file_metadata_index = data_index + data_size
 
-
         metadata_cmd_header_size = 4 + int32_size + metadata_size
         metadata_cmd = np.zeros(metadata_cmd_header_size + data_size + file_metadata_size + 1, dtype=np.int8)
 
@@ -180,18 +179,18 @@ class SoundCardTCPServer(object):
         metadata_cmd[4: 4 + int32_size] = rand_val.view(np.int8)
         # metadata
         metadata_cmd[8: 8 + (metadata_size)] = np.frombuffer(complete_header[metadata_index: metadata_index + metadata_size], dtype=np.int8)
-        
+
         # add first data block of data to the metadata_cmd
-        if with_data == True:
+        if with_data is True:
             metadata_cmd_data_index = metadata_cmd_header_size
             metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(complete_header[data_index: data_index + data_size], dtype=np.int8)
         else:
             # TODO: send reply to client and read the first block of data and add it to the first command sent here
             # TODO: also, wait for one less command on the while loop later
             pass
-        
+
         # add user metadata (2048 bytes) to metadata_cmd
-        if with_file_metadata == True:
+        if with_file_metadata is True:
             user_metadata_index = metadata_cmd_data_index + data_size
             metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(complete_header[file_metadata_index: file_metadata_index + file_metadata_size], dtype=np.int8)
         else:
@@ -204,7 +203,7 @@ class SoundCardTCPServer(object):
 
         print(f'Start sending data to device...')
         start = time.time()
-        
+
         # send metadata_cmd and get it's reply
         try:
             res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
@@ -241,7 +240,7 @@ class SoundCardTCPServer(object):
         chunk_conversion_timings = []
         chunk_sending_timings = []
 
-        #update reply value
+        # update reply value
         self._reply[2] = np.array([132], dtype=np.int8)
 
         data_cmd_data_index = 4 + int32_size + int32_size
@@ -249,17 +248,17 @@ class SoundCardTCPServer(object):
         while True:
             try:
                 chunk = await stream.readexactly(data_size)
-            except IncompleteReadError as e:
+            except IncompleteReadError:
                 break
 
             # calculate checksum for verification
             checksum = self._calc_checksum(chunk[:-1])
 
-            # if checksum is different, send reply with error                
+            # if checksum is different, send reply with error
             if checksum != chunk[-1]:
                 self._send_reply(writer, with_error=True)
                 continue
-            
+
             start = time.time()
 
             # send to board
@@ -278,7 +277,7 @@ class SoundCardTCPServer(object):
             chunk_conversion_timings.append(time.time() - start)
 
             start = time.time()
-            
+
             # send data to device
             try:
                 res_write = self._dev.write(0x01, self._data_cmd.tobytes(), 100)
@@ -322,7 +321,7 @@ class SoundCardTCPServer(object):
         self.clear_data()
 
         return preamble_bytes
-    
+
     def _get_timestamp(self):
         curr = time.time()
 
@@ -335,14 +334,14 @@ class SoundCardTCPServer(object):
         result[4:] = np.array([dec], dtype=np.uint16).view(np.int8)
 
         return result
-    
+
     def _get_total_commands_to_send(self, sound_file_size_in_samples):
         return int(sound_file_size_in_samples * 4 // 32768 + (
-                1 if ((sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
+                1 if ((sound_file_size_in_samples * 4) % 32768) != 0 else 0))
 
     def _calc_checksum(self, data):
         return sum(data) & 0xFF
-    
+
     def _send_reply(self, writer, with_error=False):
         # send reply with error
         self._reply[0] = 10 if with_error else 2
@@ -351,6 +350,7 @@ class SoundCardTCPServer(object):
         self._reply[-1] = np.array([checksum], dtype=np.int8)
 
         writer.write(bytes(self._reply))
+
 
 if __name__ == "__main__":
 

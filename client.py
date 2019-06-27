@@ -14,28 +14,28 @@ class ClientSoundCard(object):
         # get number of commands to send
         self.sound_file_size_in_samples = len(self.wave_int8) // 4
         self.commands_to_send = int(self.sound_file_size_in_samples * 4 // 32768 + (
-            1 if ((self.sound_file_size_in_samples * 4) % 32768) is not 0 else 0))
-    
+            1 if ((self.sound_file_size_in_samples * 4) % 32768) != 0 else 0))
+
     def prepare_header(self, with_data=True, with_file_metadata=True):
         # TODO: change this according to the parameters
         self._metadata_size = 16
         self._data_chunk_size = 32768
         self._file_metadata_size = 2048
         checksum_size = 1
-       
-        self._metadata_index = 5 if with_data == False and with_file_metadata == False else 7
+
+        self._metadata_index = 5 if with_data is False and with_file_metadata is False else 7
         self._preamble_size = self._metadata_index
 
         self._data_index = self._metadata_index + self._metadata_size
         self._filemetadata_index = self._metadata_index + self._metadata_size + self._data_chunk_size
 
-        if with_data == True and with_file_metadata == True:
+        if with_data is True and with_file_metadata is True:
             self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
-            self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1 ]
-        elif with_data == False and with_file_metadata == True:
+            self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1]
+        elif with_data is False and with_file_metadata is True:
             self.header = np.zeros(self._metadata_index + self._metadata_size + self._file_metadata_size + checksum_size, dtype=np.int8)
-            self.header[:self._metadata_index] = [2, 255, int('0x14', 16), int('0x08', 16), 129, 255, 1 ]
-        elif with_data == False and with_file_metadata == False:
+            self.header[:self._metadata_index] = [2, 255, int('0x14', 16), int('0x08', 16), 129, 255, 1]
+        elif with_data is False and with_file_metadata is False:
             self.header = np.zeros(self._metadata_index + self._metadata_size + checksum_size, dtype=np.int8)
             self.header[:self._metadata_index] = [2, 20, 130, 255, 1]
 
@@ -82,7 +82,7 @@ class ClientSoundCard(object):
 
     def clean_data_cmd(self):
         self.data_cmd[self._data_cmd_data_index:] = 0
-    
+
     def write_data_block(self, index):
         # write data from wave_int to cmd
         wave_idx = index * 32768
@@ -139,7 +139,7 @@ async def tcp_send_sound_client(loop):
     client.prepare_header(with_data=True, with_file_metadata=True)
     client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
 
-    #with open('testing9secs.bin', 'wb') as f:
+    # with open('testing9secs.bin', 'wb') as f:
     #        wave_int8.tofile(f)
 
     initial_time = time.time()
@@ -154,14 +154,14 @@ async def tcp_send_sound_client(loop):
     client.add_sound_filename(sound_filename_str)
     client.add_metadata_filename(metadata_filename_str)
     client.add_description_filename(description_filename_str)
-    client.add_metadata_filename_content( metadata_filename_content_str)
+    client.add_metadata_filename_content(metadata_filename_content_str)
     client.add_description_filename_content(description_filename_content_str)
 
     client.add_filemetadata()
     client.add_first_data_block()
     client.update_header_checksum()
 
-    #send header
+    # send header
     writer.write(bytes(client.header))
 
     print(f'Start timing between writing complete header and getting reply from server')
@@ -172,7 +172,7 @@ async def tcp_send_sound_client(loop):
     reply = await reader.readexactly(reply_size)
 
     # TODO: check for error
-    
+
     print(f'Received reply from server after writing complete header. timing: {time.time() - start}')
 
     timestamp = convert_timestamp(reply[5: 5 + 6])

@@ -100,10 +100,10 @@ class ClientSoundCard(object):
         self.data_cmd[-1] = self.data_cmd[:-1].sum(dtype=np.int8)
 
     def _add_filemetadata_info(self, data_str, start_index, max_value):
-        data_array = np.array(data_str, 'c').view(dtype=np.int8)
-        data_size = min(len(data_array), max_value)
-        self.filemetadata[start_index: start_index + data_size] = data_array[:data_size]
-
+        data_to_save = bytearray()
+        data_to_save.extend(map(ord, data_str))
+        data_size = len(data_to_save) if len(data_to_save) < max_value else max_value
+        self.filemetadata[start_index: start_index + data_size] = data_to_save[:data_size]
 
 
 def convert_timestamp(data: bytes):

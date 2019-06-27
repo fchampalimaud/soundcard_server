@@ -181,10 +181,34 @@ class SoundCardTCPServer(object):
         metadata_cmd[8: 8 + (metadata_size)] = np.frombuffer(complete_header[metadata_index: metadata_index + metadata_size], dtype=np.int8)
 
         # add first data block of data to the metadata_cmd
+        metadata_cmd_data_index = metadata_cmd_header_size
         if with_data is True:
-            metadata_cmd_data_index = metadata_cmd_header_size
             metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(complete_header[data_index: data_index + data_size], dtype=np.int8)
         else:
+            # send reply to client (to trigger the client to send the first data block)
+            self._send_reply(writer)
+
+            # await reply from client
+            try:
+                data_cmd_size = 7 + 4 + 32768 + 1
+                chunk = await stream.readexactly(data_cmd_size)
+            except IncompleteReadError:
+                # TODO: if reaches here, a big problem happened, we probably will need to reset the device?
+                return
+
+            # calculate checksum for verification
+            checksum = self._calc_checksum(chunk[:-1])
+
+            # if checksum is different, send reply with error
+            # TODO: what to do here? if we continue there might be an error in the data, if not, the client if not able to send the package again
+            if checksum != chunk[-1]:
+                self._send_reply(writer, with_error=True)
+                return
+
+            # get data block from data_cmd and write it to the current "header"
+            data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
+            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(data_block, dtype=np.int8)
+            #
             # TODO: send reply to client and read the first block of data and add it to the first command sent here
             # TODO: also, wait for one less command on the while loop later
             pass
@@ -228,6 +252,9 @@ class SoundCardTCPServer(object):
         # init progress bar
         pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
         pbar.update()
+        # because we already got the first "data_cmd" from the client
+        if with_data is False:
+            pbar.update()
 
         # if reached here, send ok reply to client
         self._send_reply(writer)

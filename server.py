@@ -353,8 +353,18 @@ class SoundCardTCPServer(object):
         writer.write(bytes(self._reply))
 
 if __name__ == "__main__":
+
+    # NOTE: required so that the SIGINT signal is properly captured on windows
+    def wakeup():
+        # Call again
+        loop.call_later(0.1, wakeup)
+
     srv = SoundCardTCPServer("localhost", 9999)
-    loop = asyncio.get_event_loop()
+
+    loop = asyncio.SelectorEventLoop()
+    loop.call_later(0.1, wakeup)
+    asyncio.set_event_loop(loop)
+
     try:
         loop.run_until_complete(srv.start_server())
     except KeyboardInterrupt as k:

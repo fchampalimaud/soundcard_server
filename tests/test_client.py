@@ -134,3 +134,42 @@ async def test_file_metadata_with_description_filename(prepare_sound, testing_de
     as_str = metadata_filename_on_header.tobytes().strip(b'\0')
     assert testing_description_name[:max_dimension] == "".join(map(chr, as_str))
  
+@pytest.mark.asyncio
+@pytest.mark.parametrize('metadata_filename_content', 
+                         ['testing.metadata_filename_content.bin', 
+                          'with some unicode chars á é í ó ú @', 
+                          '.', 
+                          '',
+                          'extremely long string so that it might go over the size limit. let\'s repeat that so we might actually reach the maximum value. extremely long string so that it might go over the size limit.'])
+async def test_file_metadata_with_metadata_filename_content(prepare_sound, metadata_filename_content):
+    metadata_filename_content_index = 512
+    max_dimension = 1023
+
+    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
+    client.prepare_header(with_data=True, with_file_metadata=True)
+
+    client.add_metadata_filename_content(metadata_filename_content)
+
+    metadata_filename_on_header = client.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
+    as_str = metadata_filename_on_header.tobytes().strip(b'\0')
+    assert metadata_filename_content[:max_dimension] == "".join(map(chr, as_str))
+ 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('description_filename_content', 
+                         ['testing.description_filename_content.bin', 
+                          'with some unicode chars á é í ó ú @', 
+                          '.', 
+                          '',
+                          'extremely long string so that it might go over the size limit. let\'s repeat that so we might actually reach the maximum value. extremely long string so that it might go over the size limit.'])
+async def test_file_metadata_with_description_filename_content(prepare_sound, description_filename_content):
+    metadata_filename_content_index = 1536
+    max_dimension = 511
+
+    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
+    client.prepare_header(with_data=True, with_file_metadata=True)
+
+    client.add_description_filename_content(description_filename_content)
+
+    metadata_filename_on_header = client.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
+    as_str = metadata_filename_on_header.tobytes().strip(b'\0')
+    assert description_filename_content[:max_dimension] == "".join(map(chr, as_str))

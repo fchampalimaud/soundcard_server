@@ -193,9 +193,6 @@ class SoundCardTCPServer(object):
         if with_file_metadata is True:
             user_metadata_index = metadata_cmd_data_index + data_size
             metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(complete_header[file_metadata_index: file_metadata_index + file_metadata_size], dtype=np.int8)
-        else:
-            # TODO: simply ignore and leave zeros in the command
-            pass
 
         # send info
         # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error

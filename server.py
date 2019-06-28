@@ -87,15 +87,15 @@ class SoundCardTCPServer(object):
         # prepare with 'ok' reply by default
         self._reply[:5] = np.array([2, 10, 128, 255, 16], dtype=np.int8)
 
-        int32_size = np.dtype(np.int32).itemsize
+        self._int32_size = np.dtype(np.int32).itemsize
         # prepare command to send and to receive
         # Data command length:     'c' 'm' 'd' '0x81' + random + dataIndex + 32768 + 'f'
-        package_size = 4 + int32_size + int32_size + 32768 + 1
+        package_size = 4 + self._int32_size + self._int32_size + 32768 + 1
         # align = 64
         # padding = (align - (package_size % align)) % align
 
         self._data_cmd = np.zeros(package_size, dtype=np.int8)
-        self._data_cmd_data_index = 4 + int32_size + int32_size
+        self._data_cmd_data_index = 4 + self._int32_size + self._int32_size
 
         self._data_cmd[0] = ord('c')
         self._data_cmd[1] = ord('m')
@@ -105,7 +105,7 @@ class SoundCardTCPServer(object):
         self._data_cmd[-1] = ord('f')
 
         # Data command reply:     'c' 'm' 'd' '0x81' + random + error
-        self._data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+        self._data_cmd_reply = array.array('b', [0] * (4 + self._int32_size + self._int32_size))
     
     def set_reply_type(self, type):
         self._reply[2] = np.array([type], dtype=np.int8)
@@ -113,6 +113,32 @@ class SoundCardTCPServer(object):
     def clear_data(self):
         # FIXME: temporary, this should be changed according to the needs
         self.init_data()
+
+    def send_data_to_device(self, data_to_send: bytes, rand_val, read_timeout=400):
+        try:
+            res_write = self._dev.write(0x01, data_to_send, 100)
+        except usb.core.USBError as e:
+            # TODO: we probably should try again
+            print(f"something went wrong while writing to the device: {e}")
+            return
+
+        assert res_write == len(data_to_send)
+
+        try:
+            ret = self._dev.read(0x81, self._data_cmd_reply, read_timeout)
+        except usb.core.USBError as e:
+            # TODO: we probably should try again
+
+            print(f"something went wrong while reading from the device: {e}")
+            return
+
+        # get the random received and the error received from the reply command
+        rand_val_received = int.from_bytes(self._data_cmd_reply[4: 4 + self._int32_size], byteorder='little', signed=True)
+        error_received = int.from_bytes(self._data_cmd_reply[8: 8 + self._int32_size], byteorder='little', signed=False)
+
+        assert ret == 12
+        assert rand_val_received == rand_val
+        assert error_received == 0
 
     async def _handle_request(self, reader, writer):
         addr = writer.get_extra_info('peername')
@@ -147,6 +173,7 @@ class SoundCardTCPServer(object):
             with_file_metadata = False
             self.set_reply_type(130)
 
+        # read remaining of header
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
         complete_header = preamble_bytes + header_bytes
@@ -188,12 +215,9 @@ class SoundCardTCPServer(object):
         # add first data block of data to the metadata_cmd
         data_cmd_size = 7 + 4 + 32768 + 1
         metadata_cmd_data_index = metadata_cmd_header_size
-        if with_data is True:
-            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(complete_header[data_index: data_index + data_size], dtype=np.int8)
-        else:
+        if with_data is False:
             # send reply to client (to trigger the client to send the first data block)
-            #TODO: make sure that this reply has the correct value
-            self._send_reply(writer)
+            self.send_reply(writer)
 
             # await reply from client
             try:
@@ -208,51 +232,28 @@ class SoundCardTCPServer(object):
             # if checksum is different, send reply with error
             # TODO: what to do here? if we continue there might be an error in the data, if not, the client if not able to send the package again
             if checksum != chunk[-1]:
-                self._send_reply(writer, with_error=True)
+                self.set_reply_type(132)
+                self.send_reply(writer, with_error=True)
                 return
 
             # get data block from data_cmd and write it to the current "header"
             data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
-            metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(data_block, dtype=np.int8)
+        else:
+            data_block = complete_header[data_index: data_index + data_size]
 
-            pass
+        metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(data_block, dtype=np.int8)
 
         # add user metadata (2048 bytes) to metadata_cmd
         if with_file_metadata is True:
             user_metadata_index = metadata_cmd_data_index + data_size
-            metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(complete_header[file_metadata_index: file_metadata_index + file_metadata_size], dtype=np.int8)
+            data_block = complete_header[file_metadata_index: file_metadata_index + file_metadata_size]
+            metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(data_block, dtype=np.int8)
 
-        # send info
-        # Metadata command reply: 'c' 'm' 'd' '0x80' + random + error
-        metadata_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
-
+        # send info to board
         print(f'Start sending data to device...')
         start = time.time()
 
-        # send metadata_cmd and get it's reply
-        try:
-            res_write = self._dev.write(0x01, metadata_cmd.tobytes(), 100)
-        except usb.core.USBError as e:
-            # TODO: we probably should try again
-            print(f"something went wrong while writing to the device {e}")
-            return
-
-        assert res_write == len(metadata_cmd)
-
-        try:
-            ret = self._dev.read(0x81, metadata_cmd_reply, 1000)
-        except usb.core.USBError as e:
-            # TODO: we probably should try again
-            print(f"something went wrong while reading from the device: {e}")
-            return
-
-        # get the random received and the error received from the reply command
-        rand_val_received = int.from_bytes(metadata_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-        error_received = int.from_bytes(metadata_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
-
-        assert ret == 12
-        assert rand_val_received == rand_val[0]
-        assert error_received == 0
+        self.send_data_to_device(metadata_cmd.tobytes(), rand_val, 1000)
 
         # init progress bar
         pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
@@ -262,12 +263,12 @@ class SoundCardTCPServer(object):
             pbar.update()
 
         # if reached here, send ok reply to client
-        self._send_reply(writer)
+        self.send_reply(writer)
 
         chunk_conversion_timings = []
         chunk_sending_timings = []
 
-        # update reply value
+        # update reply type
         self.set_reply_type(132)
 
         while True:
@@ -281,7 +282,7 @@ class SoundCardTCPServer(object):
 
             # if checksum is different, send reply with error
             if checksum != chunk[-1]:
-                self._send_reply(writer, with_error=True)
+                self.send_reply(writer, with_error=True)
                 continue
 
             start = time.time()
@@ -304,36 +305,13 @@ class SoundCardTCPServer(object):
             start = time.time()
 
             # send data to device
-            try:
-                res_write = self._dev.write(0x01, self._data_cmd.tobytes(), 100)
-            except usb.core.USBError as e:
-                # TODO: we probably should try again
-                print(f"something went wrong while writing to the device: {e}")
-                return
-
-            # TODO: we probably should try again
-            assert res_write == len(self._data_cmd)
-
-            try:
-                ret = self._dev.read(0x81, self._data_cmd_reply, 400)
-            except usb.core.USBError as e:
-                # TODO: we probably should try again
-
-                print(f"something went wrong while reading from the device: {e}")
-                return
-
-            # get the random received and the error received from the reply command
-            rand_val_received = int.from_bytes(self._data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
-            error_received = int.from_bytes(self._data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
-
-            assert ret == 12
-            assert rand_val_received == rand_val[0]
-            assert error_received == 0
+            self.send_data_to_device(self._data_cmd.tobytes(), rand_val)
 
             chunk_sending_timings.append(time.time() - start)
 
-            self._send_reply(writer)
+            self.send_reply(writer)
 
+            # update progress bar
             pbar.update()
 
         pbar.close()
@@ -368,7 +346,7 @@ class SoundCardTCPServer(object):
     def _calc_checksum(self, data):
         return sum(data) & 0xFF
 
-    def _send_reply(self, writer, with_error=False):
+    def send_reply(self, writer, with_error=False):
         # send reply with error
         self._reply[0] = 10 if with_error else 2
         self._reply[5: 5 + 6] = self._get_timestamp()

@@ -246,6 +246,7 @@ class SoundCardTCPServer(object):
         rand_val_received = int.from_bytes(metadata_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
         error_received = int.from_bytes(metadata_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
 
+        assert ret == 12
         assert rand_val_received == rand_val[0]
         assert error_received == 0
 
@@ -325,6 +326,7 @@ class SoundCardTCPServer(object):
             rand_val_received = int.from_bytes(self._data_cmd_reply[4: 4 + int32_size], byteorder='little', signed=True)
             error_received = int.from_bytes(self._data_cmd_reply[8: 8 + int32_size], byteorder='little', signed=False)
 
+            assert ret == 12
             assert rand_val_received == rand_val[0]
             assert error_received == 0
 

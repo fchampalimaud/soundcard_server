@@ -95,7 +95,7 @@ class SoundCardTCPServer(object):
         # padding = (align - (package_size % align)) % align
 
         self._data_cmd = np.zeros(package_size, dtype=np.int8)
-        data_cmd_data_index = 4 + int32_size + int32_size
+        self._data_cmd_data_index = 4 + int32_size + int32_size
 
         self._data_cmd[0] = ord('c')
         self._data_cmd[1] = ord('m')
@@ -106,6 +106,9 @@ class SoundCardTCPServer(object):
 
         # Data command reply:     'c' 'm' 'd' '0x81' + random + error
         self._data_cmd_reply = array.array('b', [0] * (4 + int32_size + int32_size))
+    
+    def set_reply_type(self, type):
+        self._reply[2] = np.array([type], dtype=np.int8)
 
     def clear_data(self):
         # FIXME: temporary, this should be changed according to the needs
@@ -129,6 +132,7 @@ class SoundCardTCPServer(object):
 
         # size of header will depend on preamble data (index 4 defines type of frame)
         frame_type = preamble_bytes[4]
+        self.set_reply_type(frame_type)
         header_size = 7 + 16 + 1
         metadata_index = 7
         if frame_type == 128:
@@ -141,6 +145,7 @@ class SoundCardTCPServer(object):
             metadata_index = 5
             with_data = False
             with_file_metadata = False
+            self.set_reply_type(130)
 
         header_bytes = await stream.readexactly(header_size - preamble_size)
 
@@ -181,16 +186,17 @@ class SoundCardTCPServer(object):
         metadata_cmd[8: 8 + (metadata_size)] = np.frombuffer(complete_header[metadata_index: metadata_index + metadata_size], dtype=np.int8)
 
         # add first data block of data to the metadata_cmd
+        data_cmd_size = 7 + 4 + 32768 + 1
         metadata_cmd_data_index = metadata_cmd_header_size
         if with_data is True:
             metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(complete_header[data_index: data_index + data_size], dtype=np.int8)
         else:
             # send reply to client (to trigger the client to send the first data block)
+            #TODO: make sure that this reply has the correct value
             self._send_reply(writer)
 
             # await reply from client
             try:
-                data_cmd_size = 7 + 4 + 32768 + 1
                 chunk = await stream.readexactly(data_cmd_size)
             except IncompleteReadError:
                 # TODO: if reaches here, a big problem happened, we probably will need to reset the device?
@@ -208,9 +214,7 @@ class SoundCardTCPServer(object):
             # get data block from data_cmd and write it to the current "header"
             data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
             metadata_cmd[metadata_cmd_data_index: metadata_cmd_data_index + data_size] = np.frombuffer(data_block, dtype=np.int8)
-            #
-            # TODO: send reply to client and read the first block of data and add it to the first command sent here
-            # TODO: also, wait for one less command on the while loop later
+
             pass
 
         # add user metadata (2048 bytes) to metadata_cmd
@@ -260,19 +264,15 @@ class SoundCardTCPServer(object):
         # if reached here, send ok reply to client
         self._send_reply(writer)
 
-        data_size = 7 + 4 + 32768 + 1
-
         chunk_conversion_timings = []
         chunk_sending_timings = []
 
         # update reply value
-        self._reply[2] = np.array([132], dtype=np.int8)
-
-        data_cmd_data_index = 4 + int32_size + int32_size
+        self.set_reply_type(132)
 
         while True:
             try:
-                chunk = await stream.readexactly(data_size)
+                chunk = await stream.readexactly(data_cmd_size)
             except IncompleteReadError:
                 break
 
@@ -297,7 +297,7 @@ class SoundCardTCPServer(object):
 
             # write data from chunk to cmd
             data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
-            self._data_cmd[data_cmd_data_index: data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
+            self._data_cmd[self._data_cmd_data_index: self._data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
 
             chunk_conversion_timings.append(time.time() - start)
 

@@ -181,7 +181,7 @@ class SoundCardTCPServer(object):
         # calculate checksum for verification
         checksum = self._calc_checksum(complete_header[:-1])
         if checksum != complete_header[-1]:
-            # TODO: prepare error and send error reply to client
+            self.send_reply(writer, with_error=True)
             return
 
         # get total number of commands to send to the board
@@ -255,6 +255,9 @@ class SoundCardTCPServer(object):
 
         self.send_data_to_device(metadata_cmd.tobytes(), rand_val, 1000)
 
+        # if reached here, send ok reply to client
+        self.send_reply(writer)
+
         # init progress bar
         pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
         pbar.update()
@@ -262,13 +265,10 @@ class SoundCardTCPServer(object):
         if with_data is False:
             pbar.update()
 
-        # if reached here, send ok reply to client
-        self.send_reply(writer)
-
         chunk_conversion_timings = []
         chunk_sending_timings = []
 
-        # update reply type
+        # update reply type for the data commands
         self.set_reply_type(132)
 
         while True:

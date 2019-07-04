@@ -16,12 +16,15 @@ class SoundCardTCPServer(object):
     def __init__(self, addr, port):
         self.address = addr
         self.port = port
+        self._conn_open = False
 
     async def start_server(self):
         # init connection to soundcard through the usb connection
-        if self.open() is False:
-            print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
-            return
+        self._conn_open = self.open()
+        #if self.open() is False:
+        #    self._needs_reopen = True
+            #print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
+            #return
 
         self.init_data()
 
@@ -32,11 +35,15 @@ class SoundCardTCPServer(object):
             await asyncio.sleep(10)
 
     def open(self):
+        if self._conn_open is True:
+            return True
+
         print('Opening USB connection')
         backend = libusb.get_backend()
         # backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
         self._dev = usb.core.find(backend=backend, idVendor=0x04d8, idProduct=0xee6a)
         if self._dev is None:
+            print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
             return False
 
         print(f'backend used: {self._dev.backend}')
@@ -50,6 +57,7 @@ class SoundCardTCPServer(object):
                 self._dev.set_configuration(1)
             usb.util.claim_interface(self._dev, 0)
 
+        self._conn_open = True
         return True
 
     def restart(self):
@@ -147,6 +155,12 @@ class SoundCardTCPServer(object):
         msg = await self._recv_data(writer, reader)
 
     async def _recv_data(self, writer, stream):
+        if self._conn_open is False:
+            while self.open() is False:
+                # wait a bit perhaps
+                time.sleep(1)
+                pass
+
         start = initial_time = time.time()
 
         with_data = True
@@ -358,7 +372,7 @@ class SoundCardTCPServer(object):
 
 if __name__ == "__main__":
 
-    # NOTE: required so that the SIGINT signal is properly captured on windows
+    # NOTE: required so that the SIGINT signal is properly captured on Windows
     def wakeup():
         # Call again
         loop.call_later(0.1, wakeup)

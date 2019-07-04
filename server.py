@@ -121,19 +121,23 @@ class SoundCardTCPServer(object):
     def _send_data_to_device(self, data_to_send: bytes, rand_val, read_timeout=400):
         try:
             res_write = self._dev.write(0x01, data_to_send, 100)
-        except usb.core.USBError:
+        except usb.core.USBError as e:
+            print(f'Exception while writing to device with message {e}')
+            time.sleep(1)
             self._wait_for_device_connection()
             self._send_data_to_device(data_to_send, rand_val, read_timeout)
             return
 
         assert res_write == len(data_to_send)
+        self._receive_reply_from_device(rand_val, read_timeout)
 
+    def _receive_reply_from_device(self, rand_val, read_timeout=400):
         try:
             ret = self._dev.read(0x81, self._data_cmd_reply, read_timeout)
         except usb.core.USBError as e:
-            # TODO: we probably should try again
-
-            print(f"something went wrong while reading from the device: {e}")
+            print(f'Exception while reading from device with message {e}')
+            time.sleep(1)
+            self._wait_for_device_connection()
             return
 
         # get the random received and the error received from the reply command

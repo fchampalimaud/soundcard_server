@@ -21,10 +21,6 @@ class SoundCardTCPServer(object):
     async def start_server(self):
         # init connection to soundcard through the usb connection
         self._conn_open = self.open()
-        #if self.open() is False:
-        #    self._needs_reopen = True
-            #print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
-            #return
 
         self.init_data()
 
@@ -38,17 +34,17 @@ class SoundCardTCPServer(object):
         if self._conn_open is True:
             return True
 
-        print('Opening USB connection')
+        print('Trying to open USB connection to the Harp sound card')
         backend = libusb.get_backend()
         # backend = libusb.get_backend(find_library=lambda x: "libusb-1.0.dll")
         self._dev = usb.core.find(backend=backend, idVendor=0x04d8, idProduct=0xee6a)
         if self._dev is None:
-            print(f'Error while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
+            print(f'\tError while trying to connect to the Harp sound card. Please make sure it is connected to the computer and try again.')
             return False
 
         print(f'backend used: {self._dev.backend}')
         if self._dev is None:
-            print('SoundCard not found. Please connect it to the USB port before proceeding.')
+            print('\tSoundCard not found. Please connect it to the USB port before proceeding.')
         else:
             # set the active configuration. With no arguments, the first configuration will be the active one
             # note: some devices reset when setting an already selected configuration so we should check for it before
@@ -122,12 +118,12 @@ class SoundCardTCPServer(object):
         # FIXME: temporary, this should be changed according to the needs
         self.init_data()
 
-    def send_data_to_device(self, data_to_send: bytes, rand_val, read_timeout=400):
+    def _send_data_to_device(self, data_to_send: bytes, rand_val, read_timeout=400):
         try:
             res_write = self._dev.write(0x01, data_to_send, 100)
-        except usb.core.USBError as e:
-            # TODO: we probably should try again
-            print(f"something went wrong while writing to the device: {e}")
+        except usb.core.USBError:
+            self._wait_for_device_connection()
+            self._send_data_to_device(data_to_send, rand_val, read_timeout)
             return
 
         assert res_write == len(data_to_send)
@@ -152,14 +148,11 @@ class SoundCardTCPServer(object):
         addr = writer.get_extra_info('peername')
 
         print(f'Request received from {addr}. Handling received data.')
-        msg = await self._recv_data(writer, reader)
+        await self._recv_data(writer, reader)
 
     async def _recv_data(self, writer, stream):
         if self._conn_open is False:
-            while self.open() is False:
-                # wait a bit perhaps
-                time.sleep(1)
-                pass
+            self._wait_for_device_connection()
 
         start = initial_time = time.time()
 
@@ -267,7 +260,7 @@ class SoundCardTCPServer(object):
         print(f'Start sending data to device...')
         start = time.time()
 
-        self.send_data_to_device(metadata_cmd.tobytes(), rand_val, 1000)
+        self._send_data_to_device(metadata_cmd.tobytes(), rand_val, 1000)
 
         # if reached here, send ok reply to client
         self.send_reply(writer)
@@ -319,7 +312,7 @@ class SoundCardTCPServer(object):
             start = time.time()
 
             # send data to device
-            self.send_data_to_device(self._data_cmd.tobytes(), rand_val)
+            self._send_data_to_device(self._data_cmd.tobytes(), rand_val)
 
             chunk_sending_timings.append(time.time() - start)
 
@@ -359,6 +352,12 @@ class SoundCardTCPServer(object):
 
     def _calc_checksum(self, data):
         return sum(data) & 0xFF
+
+    def _wait_for_device_connection(self):
+        self._conn_open = False
+        while self.open() is False:
+            # wait a bit before trying again
+            time.sleep(1)
 
     def send_reply(self, writer, with_error=False):
         # send reply with error

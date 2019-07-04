@@ -139,7 +139,7 @@ async def tcp_send_sound_client(loop):
                               )
 
     client = ClientSoundCard(wave_int)
-    client.prepare_header(with_data=True, with_file_metadata=False)
+    client.prepare_header(with_data=False, with_file_metadata=False)
     client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
 
     # with open('testing9secs.bin', 'wb') as f:

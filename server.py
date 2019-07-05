@@ -7,7 +7,7 @@ from usb.backend import libusb1 as libusb
 import time
 import math
 import numpy as np
-from asyncio import IncompleteReadError
+from asyncio import IncompleteReadError, BoundedSemaphore
 from tqdm import tqdm
 
 
@@ -17,8 +17,10 @@ class SoundCardTCPServer(object):
         self.address = addr
         self.port = port
         self._conn_open = False
+        self._sem = None
 
-    async def start_server(self):
+    async def start_server(self, semaphore):
+        self._sem = semaphore
         # init connection to soundcard through the usb connection
         self._conn_open = self.open()
 
@@ -28,7 +30,7 @@ class SoundCardTCPServer(object):
         asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
         while True:
-            await asyncio.sleep(10)
+            await asyncio.sleep(1)
 
     def open(self):
         if self._conn_open is True:
@@ -149,10 +151,11 @@ class SoundCardTCPServer(object):
         assert error_received == 0
 
     async def _handle_request(self, reader, writer):
-        addr = writer.get_extra_info('peername')
+        async with self._sem:
+            addr = writer.get_extra_info('peername')
 
-        print(f'Request received from {addr}. Handling received data.')
-        await self._recv_data(writer, reader)
+            print(f'Request received from {addr}. Handling received data.')
+            await self._recv_data(writer, reader)
 
     async def _recv_data(self, writer, stream):
         if self._conn_open is False:
@@ -385,9 +388,10 @@ if __name__ == "__main__":
     loop = asyncio.SelectorEventLoop()
     loop.call_later(0.1, wakeup)
     asyncio.set_event_loop(loop)
+    sem = BoundedSemaphore(value=1, loop=loop)
 
     try:
-        loop.run_until_complete(srv.start_server())
+        loop.run_until_complete(srv.start_server(sem))
     except KeyboardInterrupt as k:
         print(f'Event captured: {k}')
         srv.close()

@@ -330,7 +330,7 @@ class SoundCardTCPServer(object):
 
         writer.write('OK'.encode())
         print(f'File successfully sent in {time.time() - initial_time} s{os.linesep}')
-        print(f'Waiting to receive new requests...{os.linesep}')
+        print(f'Waiting for new requests.{os.linesep}')
 
         self.clear_data()
 

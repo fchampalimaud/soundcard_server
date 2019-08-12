@@ -279,7 +279,6 @@ class SoundCardTCPServer(object):
         if with_data is False:
             pbar.update()
 
-        chunk_conversion_timings = []
         chunk_sending_timings = []
 
         # update reply type for the data commands
@@ -314,8 +313,6 @@ class SoundCardTCPServer(object):
             data_block = chunk[7 + int32_size: 7 + int32_size + 32768]
             self._data_cmd[self._data_cmd_data_index: self._data_cmd_data_index + len(data_block)] = np.frombuffer(data_block, dtype=np.int8)
 
-            chunk_conversion_timings.append(time.time() - start)
-
             start = time.time()
 
             # send data to device
@@ -329,7 +326,6 @@ class SoundCardTCPServer(object):
             pbar.update()
 
         pbar.close()
-        print(f'\tTime used in converting data: {np.mean(chunk_conversion_timings)} s')
         print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} s')
 
         writer.write('OK'.encode())

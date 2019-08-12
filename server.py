@@ -273,7 +273,7 @@ class SoundCardTCPServer(object):
         self.send_reply(writer)
 
         # init progress bar
-        pbar = tqdm(total=commands_to_send, unit_scale=False, unit="chunks")
+        pbar = tqdm(total=commands_to_send, unit_scale=False, unit=" packets")
         pbar.update()
         # because we already got the first "data_cmd" from the client
         if with_data is False:

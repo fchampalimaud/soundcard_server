@@ -326,7 +326,7 @@ class SoundCardTCPServer(object):
             pbar.update()
 
         pbar.close()
-        print(f'\tMean time for sending each chunk: {np.mean(chunk_sending_timings)} s')
+        print(f' Mean time for sending each chunk: {int(round(np.mean(chunk_sending_timings)*1000))} ms')
 
         writer.write('OK'.encode())
         print(f'File successfully sent in {time.time() - initial_time} s{os.linesep}')

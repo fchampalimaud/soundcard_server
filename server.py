@@ -152,9 +152,6 @@ class SoundCardTCPServer(object):
 
     async def _handle_request(self, reader, writer):
         async with self._sem:
-            addr = writer.get_extra_info('peername')
-
-            print(f'Request received from {addr}. Handling received data.')
             await self._recv_data(writer, reader)
 
     async def _recv_data(self, writer, stream):
@@ -264,7 +261,6 @@ class SoundCardTCPServer(object):
             metadata_cmd[user_metadata_index: user_metadata_index + file_metadata_size] = np.frombuffer(data_block, dtype=np.int8)
 
         # send info to board
-        print(f'Start sending data to device...')
         start = time.time()
 
         self._send_data_to_device(metadata_cmd.tobytes(), rand_val, 1000)
@@ -326,7 +322,7 @@ class SoundCardTCPServer(object):
             pbar.update()
 
         pbar.close()
-        print(f' Mean time for sending each packet: {int(round(np.mean(chunk_sending_timings)*1000))} ms')
+        print(f'Mean time for sending each packet: {int(round(np.mean(chunk_sending_timings)*1000))} ms')
 
         writer.write('OK'.encode())
         print(f'File successfully sent in {time.time() - initial_time} s{os.linesep}')

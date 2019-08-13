@@ -19,7 +19,7 @@ class SoundCardHarpProtocol(object):
     def prepare_header(self, with_data=True, with_file_metadata=True):
         # TODO: change this according to the parameters
         self._metadata_size = 16
-        self._data_chunk_size = 32768
+        self._data_block_size = 32768
         self._file_metadata_size = 2048
         checksum_size = 1
 
@@ -27,11 +27,11 @@ class SoundCardHarpProtocol(object):
         self._preamble_size = self._metadata_index
 
         self._data_index = self._metadata_index + self._metadata_size
-        self._filemetadata_index = self._metadata_index + self._metadata_size + self._data_chunk_size
+        self._filemetadata_index = self._metadata_index + self._metadata_size + self._data_block_size
 
         if with_file_metadata is True:
             if with_data is True:
-                self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_chunk_size + self._file_metadata_size + checksum_size, dtype=np.int8)
+                self.header = np.zeros(self._metadata_index + self._metadata_size + self._data_block_size + self._file_metadata_size + checksum_size, dtype=np.int8)
                 self.header[:self._metadata_index] = [2, 255, int('0x10', 16), int('0x88', 16), 128, 255, 1]
             else:
                 self.header = np.zeros(self._metadata_index + self._metadata_size + self._file_metadata_size + checksum_size, dtype=np.int8)
@@ -45,7 +45,7 @@ class SoundCardHarpProtocol(object):
         # prepare data_cmd
         self.data_cmd = np.zeros(7 + self.int32_size + 32768 + 1, dtype=np.int8)
         self._data_cmd_data_index = 7
-        self._data_cmd_data_chunk_index = self._data_cmd_data_index + self.int32_size
+        self._data_cmd_data_block_index = self._data_cmd_data_index + self.int32_size
         # add data_cmd header
         self.data_cmd[:self._data_cmd_data_index] = [2, 255, int('0x04', 16), int('0x80', 16), 132, 255, 132]
 
@@ -75,7 +75,7 @@ class SoundCardHarpProtocol(object):
     def add_first_data_block(self):
         if self._metadata_index == 5:
             return
-        self.header[self._data_index: self._data_index + self._data_chunk_size] = self.wave_int8[:self._data_chunk_size]
+        self.header[self._data_index: self._data_index + self._data_block_size] = self.wave_int8[:self._data_block_size]
 
     def update_header_checksum(self):
         self.header[-1] = self.header.sum()
@@ -91,7 +91,7 @@ class SoundCardHarpProtocol(object):
         wave_idx = index * 32768
         data_block = self.wave_int8[wave_idx: wave_idx + 32768]
 
-        self.data_cmd[self._data_cmd_data_chunk_index: self._data_cmd_data_chunk_index + len(data_block)] = data_block
+        self.data_cmd[self._data_cmd_data_block_index: self._data_cmd_data_block_index + len(data_block)] = data_block
 
     def update_data_checksum(self):
         self.data_cmd[-1] = self.data_cmd[:-1].sum(dtype=np.int8)
@@ -181,7 +181,7 @@ async def tcp_send_sound_client(loop):
 
     timestamp = convert_timestamp(reply[5: 5 + 6])
     # send rest of data
-    chunk_sending_timings = []
+    packet_sending_timings = []
 
     # get number of commands to send
     commands_to_send = protocol.commands_to_send
@@ -190,7 +190,7 @@ async def tcp_send_sound_client(loop):
     print(f'Sending...')
 
     for i in range(1, commands_to_send):
-        # clean the remaining elements for the last chunk which might be smaller than 32K
+        # clean the remaining elements for the last packet which might be smaller than 32K
         if i == commands_to_send - 1:
             protocol.clean_data_cmd()
 
@@ -210,7 +210,7 @@ async def tcp_send_sound_client(loop):
         reply_size = 5 + 6 + 1
         reply = await reader.readexactly(reply_size)
 
-        chunk_sending_timings.append(time.time() - start)
+        packet_sending_timings.append(time.time() - start)
 
         timestamp = convert_timestamp(reply[5: 5 + 6])
 
@@ -222,9 +222,9 @@ async def tcp_send_sound_client(loop):
 
     msg = await reader.readexactly(2)
     if msg == b'OK':
-        print(f'Mean time for sending each packet: {round(np.mean(chunk_sending_timings) * 1000, 2)} ms')
+        print(f'Mean time for sending each packet: {round(np.mean(packet_sending_timings) * 1000, 2)} ms')
         total_time = (time.time() - initial_time)
-        bandwidth = (((32768 * len(chunk_sending_timings)) / total_time) * 8) / 2**20
+        bandwidth = (((32768 * len(packet_sending_timings)) / total_time) * 8) / 2**20
         print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
         print(f'Elapsed time: {int(round(total_time * 1000))} ms')
         print('Transfer completed successfully.')

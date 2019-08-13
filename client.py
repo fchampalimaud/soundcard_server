@@ -222,11 +222,12 @@ async def tcp_send_sound_client(loop):
 
     msg = await reader.readexactly(2)
     if msg == b'OK':
-        print('Data successfully sent!')
-
-    print(f'total time to send file: {time.time() - initial_time}')
-    print(f'chunks_sending_timings median: {np.median(chunk_sending_timings)}')
-    print(f'chunks_sending_timings average: {np.mean(chunk_sending_timings)}')
+        print(f'Mean time for sending each packet: {round(np.mean(chunk_sending_timings) * 1000, 2)} ms')
+        total_time = (time.time() - initial_time)
+        bandwidth = (((32768 * len(chunk_sending_timings)) / total_time) * 8) / 2**20
+        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
+        print(f'Elapsed time: {int(round(total_time * 1000))} ms')
+        print('Transfer completed successfully.')
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

@@ -6,16 +6,6 @@ from generate_sound import generate_sound, WindowConfiguration
 from soundcard_protocol import SoundCardHarpProtocol
 
 
-def convert_timestamp(data: bytes):
-    data = np.frombuffer(data, dtype=np.int8)
-
-    integer = data[:4].view(np.uint32)
-    dec = data[4:].view(np.uint16)
-
-    res = integer + (dec * 10.0**-6 * 32)
-    return res
-
-
 async def tcp_send_sound_client(loop):
     reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
 
@@ -50,7 +40,7 @@ async def tcp_send_sound_client(loop):
 
     initial_time = time.time()
 
-    #start creating message to send according to the protocol
+    # start creating message to send according to the protocol
     sound_filename_str = 'my_sound_filename.bin'
     metadata_filename_str = 'my_metadata_filename.bin'
     description_filename_str = 'my_description_filename.txt'
@@ -82,7 +72,7 @@ async def tcp_send_sound_client(loop):
     if reply[0] != 2:
         return
 
-    timestamp = convert_timestamp(reply[5: 5 + 6])
+    timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
     # send rest of data
     packet_sending_timings = []
 
@@ -115,7 +105,7 @@ async def tcp_send_sound_client(loop):
 
         packet_sending_timings.append(time.time() - start)
 
-        timestamp = convert_timestamp(reply[5: 5 + 6])
+        timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
 
         # FIXME: if reply is an error, simply return (ou maybe try again would be more adequate)
         if reply[0] != 2:

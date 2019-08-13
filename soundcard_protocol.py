@@ -95,3 +95,12 @@ class SoundCardHarpProtocol(object):
         data_to_save.extend(map(ord, data_str))
         data_size = len(data_to_save) if len(data_to_save) < max_value else max_value
         self.filemetadata[start_index: start_index + data_size] = data_to_save[:data_size]
+
+    def convert_timestamp(self, data: bytes):
+        data = np.frombuffer(data, dtype=np.int8)
+
+        integer = data[:4].view(np.uint32)
+        dec = data[4:].view(np.uint16)
+
+        res = integer + (dec * 10.0**-6 * 32)
+        return res

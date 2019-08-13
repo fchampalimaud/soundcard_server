@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from client import ClientSoundCard
+from client import SoundCardHarpProtocol
 from generate_sound import generate_sound, WindowConfiguration
 
 
@@ -32,26 +32,26 @@ def prepare_sound():
 
 @pytest.mark.asyncio
 async def test_header_size_with_data_and_with_file_metadata(prepare_sound):
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 0))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    assert len(client.header) == (7 + 16 + 32768 + 2048 + 1)
+    assert len(protocol.header) == (7 + 16 + 32768 + 2048 + 1)
 
 
 @pytest.mark.asyncio
 async def test_header_size_without_data_and_with_file_metadata(prepare_sound):
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 0))
-    client.prepare_header(with_data=False, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol.prepare_header(with_data=False, with_file_metadata=True)
 
-    assert len(client.header) == (7 + 16 + 2048 + 1)
+    assert len(protocol.header) == (7 + 16 + 2048 + 1)
 
 
 @pytest.mark.asyncio
 async def test_header_size_without_data_and_without_file_metadata(prepare_sound):
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 0))
-    client.prepare_header(with_data=False, with_file_metadata=False)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol.prepare_header(with_data=False, with_file_metadata=False)
 
-    assert len(client.header) == (5 + 16 + 1)
+    assert len(protocol.header) == (5 + 16 + 1)
 
 
 @pytest.mark.asyncio
@@ -62,20 +62,20 @@ async def test_header_size_without_data_and_without_file_metadata(prepare_sound)
 async def test_metadata_contents(prepare_sound, sound_index, duration, sample_rate, data_type):
     metadata_index = 7
 
-    client = ClientSoundCard(prepare_sound(sound_index, duration, sample_rate, data_type))
-    client.prepare_header(with_data=True, with_file_metadata=True)
-    client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
+    protocol = SoundCardHarpProtocol(prepare_sound(sound_index, duration, sample_rate, data_type))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
+    protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 
-    sound_index_on_header = client.header[metadata_index: metadata_index + 4].view(np.int32)
+    sound_index_on_header = protocol.header[metadata_index: metadata_index + 4].view(np.int32)
     assert sound_index == sound_index_on_header
 
-    sound_file_size_in_samples_on_header = client.header[metadata_index + 4: metadata_index + 4 + 4].view(np.int32)
-    assert client.sound_file_size_in_samples == sound_file_size_in_samples_on_header
+    sound_file_size_in_samples_on_header = protocol.header[metadata_index + 4: metadata_index + 4 + 4].view(np.int32)
+    assert protocol.sound_file_size_in_samples == sound_file_size_in_samples_on_header
 
-    sample_rate_on_header = client.header[metadata_index + 4 * 2: metadata_index + 4 * 2 + 4].view(np.int32)
+    sample_rate_on_header = protocol.header[metadata_index + 4 * 2: metadata_index + 4 * 2 + 4].view(np.int32)
     assert sample_rate == sample_rate_on_header
 
-    data_type_on_header = client.header[metadata_index + 4 * 3: metadata_index + 4 * 3 + 4].view(np.int32)
+    data_type_on_header = protocol.header[metadata_index + 4 * 3: metadata_index + 4 * 3 + 4].view(np.int32)
     assert data_type == data_type_on_header
 
 
@@ -90,12 +90,12 @@ async def test_file_metadata_sound_filename(prepare_sound, sound_filename_str):
     file_metadata_index = 0
     max_dimension = 169
 
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    client.add_sound_filename(sound_filename_str)
+    protocol.add_sound_filename(sound_filename_str)
 
-    sound_filename_on_header = client.filemetadata[file_metadata_index: file_metadata_index + max_dimension]
+    sound_filename_on_header = protocol.filemetadata[file_metadata_index: file_metadata_index + max_dimension]
     as_str = sound_filename_on_header.tobytes().strip(b'\0')
     assert sound_filename_str[:max_dimension] == "".join(map(chr, as_str))
 
@@ -111,12 +111,12 @@ async def test_file_metadata_with_metadata_filename(prepare_sound, testing_metad
     file_metadata_index = 170
     max_dimension = 169
 
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    client.add_metadata_filename(testing_metadata_name)
+    protocol.add_metadata_filename(testing_metadata_name)
 
-    metadata_filename_on_header = client.filemetadata[file_metadata_index: file_metadata_index + max_dimension]
+    metadata_filename_on_header = protocol.filemetadata[file_metadata_index: file_metadata_index + max_dimension]
     as_str = metadata_filename_on_header.tobytes().strip(b'\0')
     assert testing_metadata_name[:max_dimension] == "".join(map(chr, as_str))
 
@@ -132,12 +132,12 @@ async def test_file_metadata_with_description_filename(prepare_sound, testing_de
     description_filename_index = 340
     max_dimension = 169
 
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    client.add_description_filename(testing_description_name)
+    protocol.add_description_filename(testing_description_name)
 
-    metadata_filename_on_header = client.filemetadata[description_filename_index: description_filename_index + max_dimension]
+    metadata_filename_on_header = protocol.filemetadata[description_filename_index: description_filename_index + max_dimension]
     as_str = metadata_filename_on_header.tobytes().strip(b'\0')
     assert testing_description_name[:max_dimension] == "".join(map(chr, as_str))
 
@@ -153,12 +153,12 @@ async def test_file_metadata_with_metadata_filename_content(prepare_sound, metad
     metadata_filename_content_index = 512
     max_dimension = 1023
 
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    client.add_metadata_filename_content(metadata_filename_content)
+    protocol.add_metadata_filename_content(metadata_filename_content)
 
-    metadata_filename_on_header = client.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
+    metadata_filename_on_header = protocol.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
     as_str = metadata_filename_on_header.tobytes().strip(b'\0')
     assert metadata_filename_content[:max_dimension] == "".join(map(chr, as_str))
 
@@ -174,11 +174,11 @@ async def test_file_metadata_with_description_filename_content(prepare_sound, de
     metadata_filename_content_index = 1536
     max_dimension = 511
 
-    client = ClientSoundCard(prepare_sound(2, 4, 96000, 1))
-    client.prepare_header(with_data=True, with_file_metadata=True)
+    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
 
-    client.add_description_filename_content(description_filename_content)
+    protocol.add_description_filename_content(description_filename_content)
 
-    metadata_filename_on_header = client.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
+    metadata_filename_on_header = protocol.filemetadata[metadata_filename_content_index: metadata_filename_content_index + max_dimension]
     as_str = metadata_filename_on_header.tobytes().strip(b'\0')
     assert description_filename_content[:max_dimension] == "".join(map(chr, as_str))

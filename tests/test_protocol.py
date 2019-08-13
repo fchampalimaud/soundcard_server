@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from client import SoundCardHarpProtocol
+from soundcard_protocol import SoundCardHarpProtocol
 from generate_sound import generate_sound, WindowConfiguration
 
 

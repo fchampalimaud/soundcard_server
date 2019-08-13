@@ -5,7 +5,7 @@ import numpy as np
 from generate_sound import generate_sound, WindowConfiguration
 
 
-class ClientSoundCard(object):
+class SoundCardHarpProtocol(object):
 
     def __init__(self, wave_int):
         self.wave_int8 = wave_int.view(np.int8)
@@ -138,74 +138,70 @@ async def tcp_send_sound_client(loop):
                               window_configuration=window_config
                               )
 
-    client = ClientSoundCard(wave_int)
-    client.prepare_header(with_data=False, with_file_metadata=False)
-    client.add_metadata([sound_index, client.sound_file_size_in_samples, sample_rate, data_type])
+    protocol = SoundCardHarpProtocol(wave_int)
+    protocol.prepare_header(with_data=True, with_file_metadata=True)
+    protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 
     # with open('testing9secs.bin', 'wb') as f:
     #        wave_int8.tofile(f)
 
     initial_time = time.time()
 
-    # start creating message to send according to the protocol
-    # sound_filename_str = 'testing_filename'
-    # metadata_filename_str = 'testing_metadata_name'
-    # description_filename_str = 'testing_description_name'
-    # metadata_filename_content_str = 'testing_content_from_metadata_filename'
-    # description_filename_content_str = 'testing_content_from_description_filename'
+    #start creating message to send according to the protocol
+    sound_filename_str = 'my_sound_filename.bin'
+    metadata_filename_str = 'my_metadata_filename.bin'
+    description_filename_str = 'my_description_filename.txt'
 
-    # client.add_sound_filename(sound_filename_str)
-    # client.add_metadata_filename(metadata_filename_str)
-    # client.add_description_filename(description_filename_str)
-    # client.add_metadata_filename_content(metadata_filename_content_str)
-    # client.add_description_filename_content(description_filename_content_str)
+    metadata_filename_content_str = 'metadata content (can be binary)'
+    description_filename_content_str = 'my sound is the best'
 
-    # client.add_filemetadata()
-    client.add_first_data_block()
-    client.update_header_checksum()
+    protocol.add_sound_filename(sound_filename_str)
+    protocol.add_metadata_filename(metadata_filename_str)
+    protocol.add_description_filename(description_filename_str)
+
+    protocol.add_metadata_filename_content(metadata_filename_content_str)
+    protocol.add_description_filename_content(description_filename_content_str)
+
+    protocol.add_filemetadata()
+    protocol.add_first_data_block()
+    protocol.update_header_checksum()
 
     # send header
-    writer.write(bytes(client.header))
+    writer.write(bytes(protocol.header))
 
-    print(f'Start timing between writing complete header and getting reply from server')
     start = time.time()
 
     # receive reply
     reply_size = 5 + 6 + 1
     reply = await reader.readexactly(reply_size)
 
-    # TODO: check for error
-
-    print(f'Received reply from server after writing complete header. timing: {time.time() - start}')
-
-    timestamp = convert_timestamp(reply[5: 5 + 6])
-
     # if reply is an error, simply return (ou maybe try again would be more adequate)
     if reply[0] != 2:
         return
 
+    timestamp = convert_timestamp(reply[5: 5 + 6])
     # send rest of data
     chunk_sending_timings = []
 
     # get number of commands to send
-    commands_to_send = client.commands_to_send
+    commands_to_send = protocol.commands_to_send
 
-    print(f'chunks to send: {commands_to_send}')
+    print(f'Number of packets to send: {commands_to_send}')
     print(f'Sending...')
 
     for i in range(1, commands_to_send):
         # clean the remaining elements for the last chunk which might be smaller than 32K
         if i == commands_to_send - 1:
-            client.clean_data_cmd()
+            protocol.clean_data_cmd()
 
-        client.write_data_index(i)
-        client.write_data_block(i)
-        client.update_data_checksum()
+        protocol.write_data_index(i)
+        protocol.write_data_block(i)
+        protocol.update_data_checksum()
 
         start = time.time()
 
         # write to socket
-        writer.write(bytes(client.data_cmd))
+        writer.write(bytes(protocol.data_cmd))
 
         # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
         await writer.drain()

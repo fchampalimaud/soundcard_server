@@ -1,7 +1,7 @@
 import numpy as np
 
 
-class SoundCardHarpProtocol(object):
+class Protocol(object):
 
     def __init__(self, wave_int):
         self.wave_int8 = wave_int.view(np.int8)

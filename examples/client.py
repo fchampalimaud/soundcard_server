@@ -2,8 +2,8 @@ import asyncio
 import time
 import numpy as np
 
-from generate_sound import generate_sound, WindowConfiguration
-from soundcard_protocol import SoundCardHarpProtocol
+from tools import generate_sound, WindowConfiguration
+from protocol import Protocol
 
 
 async def tcp_send_sound_client(loop):
@@ -31,7 +31,7 @@ async def tcp_send_sound_client(loop):
                               window_configuration=window_config
                               )
 
-    protocol = SoundCardHarpProtocol(wave_int)
+    protocol = Protocol(wave_int)
     protocol.prepare_header(with_data=True, with_file_metadata=True)
     protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 

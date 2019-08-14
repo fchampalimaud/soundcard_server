@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from examples.soundcard_protocol import SoundCardHarpProtocol
+from examples.protocol import Protocol
 from examples.tools import generate_sound, WindowConfiguration
 
 
@@ -32,7 +32,7 @@ def prepare_sound():
 
 @pytest.mark.asyncio
 async def test_header_size_with_data_and_with_file_metadata(prepare_sound):
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 0))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     assert len(protocol.header) == (7 + 16 + 32768 + 2048 + 1)
@@ -40,7 +40,7 @@ async def test_header_size_with_data_and_with_file_metadata(prepare_sound):
 
 @pytest.mark.asyncio
 async def test_header_size_without_data_and_with_file_metadata(prepare_sound):
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 0))
     protocol.prepare_header(with_data=False, with_file_metadata=True)
 
     assert len(protocol.header) == (7 + 16 + 2048 + 1)
@@ -48,7 +48,7 @@ async def test_header_size_without_data_and_with_file_metadata(prepare_sound):
 
 @pytest.mark.asyncio
 async def test_header_size_without_data_and_without_file_metadata(prepare_sound):
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 0))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 0))
     protocol.prepare_header(with_data=False, with_file_metadata=False)
 
     assert len(protocol.header) == (5 + 16 + 1)
@@ -62,7 +62,7 @@ async def test_header_size_without_data_and_without_file_metadata(prepare_sound)
 async def test_metadata_contents(prepare_sound, sound_index, duration, sample_rate, data_type):
     metadata_index = 7
 
-    protocol = SoundCardHarpProtocol(prepare_sound(sound_index, duration, sample_rate, data_type))
+    protocol = Protocol(prepare_sound(sound_index, duration, sample_rate, data_type))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
     protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 
@@ -90,7 +90,7 @@ async def test_file_metadata_sound_filename(prepare_sound, sound_filename_str):
     file_metadata_index = 0
     max_dimension = 169
 
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 1))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     protocol.add_sound_filename(sound_filename_str)
@@ -111,7 +111,7 @@ async def test_file_metadata_with_metadata_filename(prepare_sound, testing_metad
     file_metadata_index = 170
     max_dimension = 169
 
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 1))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     protocol.add_metadata_filename(testing_metadata_name)
@@ -132,7 +132,7 @@ async def test_file_metadata_with_description_filename(prepare_sound, testing_de
     description_filename_index = 340
     max_dimension = 169
 
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 1))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     protocol.add_description_filename(testing_description_name)
@@ -153,7 +153,7 @@ async def test_file_metadata_with_metadata_filename_content(prepare_sound, metad
     metadata_filename_content_index = 512
     max_dimension = 1023
 
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 1))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     protocol.add_metadata_filename_content(metadata_filename_content)
@@ -174,7 +174,7 @@ async def test_file_metadata_with_description_filename_content(prepare_sound, de
     metadata_filename_content_index = 1536
     max_dimension = 511
 
-    protocol = SoundCardHarpProtocol(prepare_sound(2, 4, 96000, 1))
+    protocol = Protocol(prepare_sound(2, 4, 96000, 1))
     protocol.prepare_header(with_data=True, with_file_metadata=True)
 
     protocol.add_description_filename_content(description_filename_content)

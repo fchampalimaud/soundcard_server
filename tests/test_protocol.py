@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
-from soundcard_protocol import SoundCardHarpProtocol
-from generate_sound import generate_sound, WindowConfiguration
+from examples.soundcard_protocol import SoundCardHarpProtocol
+from examples.generate_sound import generate_sound, WindowConfiguration
 
 
 @pytest.fixture

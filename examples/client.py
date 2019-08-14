@@ -78,6 +78,7 @@ async def tcp_send_sound_client(loop):
     if reply[0] != 2:
         return
 
+    # gets the timestamp as per the Harp protocol
     timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
 
     # send rest of data
@@ -113,6 +114,7 @@ async def tcp_send_sound_client(loop):
 
         packet_sending_timings.append(time.time() - start)
 
+        # gets the timestamp as per the Harp protocol
         timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
 
         if reply[0] != 2:

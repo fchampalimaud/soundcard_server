@@ -14,7 +14,7 @@ async def tcp_send_sound_client(loop):
     sample_rate = 96000
     data_type = 0
 
-    # generate sound
+    # define a WindowConfiguration to be applied to the generated sound in the next step
     window_config = WindowConfiguration(left_duration=0,
                                         left_apply_window_start=True,
                                         left_apply_window_end=False,
@@ -24,6 +24,7 @@ async def tcp_send_sound_client(loop):
                                         right_apply_window_end=True,
                                         right_window_function='Bartlett')
 
+    # generate the sound
     wave_int = generate_sound(fs=sample_rate,                 # sample rate in Hz
                               duration=duration,              # duration of the sound in seconds
                               frequency_left=1500,            # frequency of the sinusoidal signal generated in Hz for the left channel
@@ -31,16 +32,18 @@ async def tcp_send_sound_client(loop):
                               window_configuration=window_config
                               )
 
+    # initialize the Protocol with the data from the generate_sound 
+    # (use your own functions to generate your binary sounds if you need something different)
     protocol = Protocol(wave_int)
+    # prepare header (it will define the size of the first command that will be sent to the Sound Card)
     protocol.prepare_header(with_data=True, with_file_metadata=True)
+    # add the metadata information regarding the sound and which index will the sound be written to
     protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
-
-    # with open('testing9secs.bin', 'wb') as f:
-    #        wave_int8.tofile(f)
 
     initial_time = time.time()
 
     # start creating message to send according to the protocol
+    # NOTE: if on calling prepare_header with_file_metadata was False, the next elements aren't required
     sound_filename_str = 'my_sound_filename.bin'
     metadata_filename_str = 'my_metadata_filename.bin'
     description_filename_str = 'my_description_filename.txt'
@@ -55,11 +58,14 @@ async def tcp_send_sound_client(loop):
     protocol.add_metadata_filename_content(metadata_filename_content_str)
     protocol.add_description_filename_content(description_filename_content_str)
 
+    # NOTE: These two methods are required depending on the parameters given to the 'prepare_header' Protocol method
     protocol.add_filemetadata()
     protocol.add_first_data_block()
+
+    # force the calculation of the checksum
     protocol.update_header_checksum()
 
-    # send header
+    # send header to server
     writer.write(bytes(protocol.header))
 
     start = time.time()
@@ -73,6 +79,7 @@ async def tcp_send_sound_client(loop):
         return
 
     timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
+
     # send rest of data
     packet_sending_timings = []
 
@@ -82,6 +89,7 @@ async def tcp_send_sound_client(loop):
     print(f'Number of packets to send: {commands_to_send}')
     print(f'Sending...')
 
+    # cycle through the sound data and send the packets to the server
     for i in range(1, commands_to_send):
         # clean the remaining elements for the last packet which might be smaller than 32K
         if i == commands_to_send - 1:
@@ -112,6 +120,7 @@ async def tcp_send_sound_client(loop):
 
     writer.write_eof()
 
+    # wait for the server's response after sending everything
     msg = await reader.readexactly(2)
     if msg == b'OK':
         print(f'Mean time for sending each packet: {round(np.mean(packet_sending_timings) * 1000, 2)} ms')

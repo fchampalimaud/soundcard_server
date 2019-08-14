@@ -64,6 +64,8 @@ class Protocol(object):
         self.header[self._metadata_index: self._metadata_index + self._metadata_size] = np.array(metadata, dtype=np.int32).view(np.int8)
 
     def add_filemetadata(self):
+        if self._metadata_index == 5:
+            return
         self.header[self._filemetadata_index: self._filemetadata_index + self._file_metadata_size] = self.filemetadata
 
     def add_first_data_block(self):

@@ -107,7 +107,6 @@ async def tcp_send_sound_client(loop):
 
         timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
 
-        # FIXME: if reply is an error, simply return (ou maybe try again would be more adequate)
         if reply[0] != 2:
             return
 

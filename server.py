@@ -117,7 +117,6 @@ class SoundCardTCPServer(object):
         self._reply[2] = np.array([type], dtype=np.int8)
 
     def clear_data(self):
-        # FIXME: temporary, this should be changed according to the needs
         self.init_data()
 
     def _send_data_to_device(self, data_to_send: bytes, rand_val, read_timeout=400):
@@ -234,14 +233,12 @@ class SoundCardTCPServer(object):
             try:
                 chunk = await stream.readexactly(data_cmd_size)
             except IncompleteReadError:
-                # TODO: if reaches here, a big problem happened, we probably will need to reset the device?
                 return
 
             # calculate checksum for verification
             checksum = self._calc_checksum(chunk[:-1])
 
             # if checksum is different, send reply with error
-            # TODO: what to do here? if we continue there might be an error in the data, if not, the client if not able to send the package again
             if checksum != chunk[-1]:
                 self.set_reply_type(132)
                 self.send_reply(writer, with_error=True)

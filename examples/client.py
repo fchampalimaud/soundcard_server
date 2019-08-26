@@ -91,9 +91,8 @@ async def tcp_send_sound_client(loop):
     if msg == b'OK':
         total_time = (time.time() - initial_time)
         bandwidth = (((32768 * len(packet_sending_timings)) / total_time) * 8) / 2**20
-        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
         print(f'Elapsed time: {int(round(total_time * 1000))} ms')
-        print('Transfer completed successfully.')
+        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

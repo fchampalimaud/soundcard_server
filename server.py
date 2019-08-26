@@ -319,7 +319,6 @@ class SoundCardTCPServer(object):
             pbar.update()
 
         pbar.close()
-        print(f'Mean time for sending each packet: {round(np.mean(chunk_sending_timings) * 1000, 2)} ms')
 
         writer.write('OK'.encode())
 

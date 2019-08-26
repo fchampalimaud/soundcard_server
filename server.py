@@ -324,8 +324,8 @@ class SoundCardTCPServer(object):
 
         total_time = time.time() - initial_time
         bandwidth = (((32768 * len(chunk_sending_timings)) / total_time) * 8) / 2**20
-        print(f'Elapsed time: {int(round(total_time * 1000))} ms{os.linesep}')
-        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
+        print(f'Elapsed time: {int(round(total_time * 1000))} ms')
+        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s{os.linesep}')
 
         self.clear_data()
 

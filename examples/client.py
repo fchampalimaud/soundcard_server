@@ -1,14 +1,12 @@
 import asyncio
 import time
-import numpy as np
 
-from .tools import generate_sound, WindowConfiguration
 from .protocol import Protocol
+from .communication import Communication
+from .tools import WindowConfiguration, generate_sound
 
 
 async def tcp_send_sound_client(loop):
-    reader, writer = await asyncio.open_connection('localhost', 9999, loop=loop)
-
     sound_index = 4
     duration = 12
     sample_rate = 96000
@@ -40,6 +38,10 @@ async def tcp_send_sound_client(loop):
     # add the metadata information regarding the sound and which index will the sound be written to
     protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 
+    # initialize communication
+    comm = Communication(protocol, loop)
+    await comm.open()
+
     initial_time = time.time()
 
     # start creating message to send according to the protocol
@@ -66,66 +68,27 @@ async def tcp_send_sound_client(loop):
     protocol.update_header_checksum()
 
     # send header to server
-    writer.write(bytes(protocol.header))
-
-    start = time.time()
+    comm.send_header(protocol.header)
 
     # receive reply
-    reply_size = 5 + 6 + 1
-    reply = await reader.readexactly(reply_size)
+    reply = await comm.get_reply()
 
     # if reply is an error, simply return (ou maybe try again would be more adequate)
     if reply[0] != 2:
         return
 
-    # gets the timestamp as per the Harp protocol
+    # ex. gets the timestamp as per the Harp protocol to verify timings if you wish
     timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
 
     # send rest of data
-    packet_sending_timings = []
-
-    # get number of commands to send
-    commands_to_send = protocol.commands_to_send
-
-    print(f'Number of packets to send: {commands_to_send}')
     print(f'Sending...')
+    # Communication.send_sound calculates the duration that it took to send each packet
+    packet_sending_timings = await comm.send_sound()
 
-    # cycle through the sound data and send the packets to the server
-    for i in range(1, commands_to_send):
-        # clean the remaining elements for the last packet which might be smaller than 32K
-        if i == commands_to_send - 1:
-            protocol.clean_data_cmd()
-
-        protocol.write_data_index(i)
-        protocol.write_data_block(i)
-        protocol.update_data_checksum()
-
-        start = time.time()
-
-        # write to socket
-        writer.write(bytes(protocol.data_cmd))
-
-        # to guarantee that the buffer is not getting filled completely. It will continue immediately if there's still space in the buffer
-        await writer.drain()
-
-        # receive ok
-        reply_size = 5 + 6 + 1
-        reply = await reader.readexactly(reply_size)
-
-        packet_sending_timings.append(time.time() - start)
-
-        # gets the timestamp as per the Harp protocol
-        timestamp = protocol.convert_timestamp(reply[5: 5 + 6])
-
-        if reply[0] != 2:
-            return
-
-    writer.write_eof()
+    msg = await comm.get_final_reply()
 
     # wait for the server's response after sending everything
-    msg = await reader.readexactly(2)
     if msg == b'OK':
-        print(f'Mean time for sending each packet: {round(np.mean(packet_sending_timings) * 1000, 2)} ms')
         total_time = (time.time() - initial_time)
         bandwidth = (((32768 * len(packet_sending_timings)) / total_time) * 8) / 2**20
         print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')

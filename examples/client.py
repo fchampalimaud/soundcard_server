@@ -2,8 +2,8 @@ import asyncio
 import time
 import numpy as np
 
-from tools import generate_sound, WindowConfiguration
-from protocol import Protocol
+from .tools import generate_sound, WindowConfiguration
+from .protocol import Protocol
 
 
 async def tcp_send_sound_client(loop):
@@ -32,7 +32,7 @@ async def tcp_send_sound_client(loop):
                               window_configuration=window_config
                               )
 
-    # initialize the Protocol with the data from the generate_sound 
+    # initialize the Protocol with the data from the generate_sound
     # (use your own functions to generate your binary sounds if you need something different)
     protocol = Protocol(wave_int)
     # prepare header (it will define the size of the first command that will be sent to the Sound Card)

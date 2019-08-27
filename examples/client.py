@@ -83,7 +83,11 @@ async def tcp_send_sound_client(loop):
     # send rest of data
     print(f'Sending...')
     # Communication.send_sound calculates the duration that it took to send each packet
-    packet_sending_timings = await comm.send_sound()
+    (packet_sending_timings, error_str) = await comm.send_sound()
+
+    if error_str != "Success":
+        print('Error while transfering sound data. Please try again after resetting the Sound Card')
+        return
 
     msg = await comm.get_final_reply()
 

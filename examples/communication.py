@@ -55,10 +55,10 @@ class Communication:
             timestamp = self._protocol.convert_timestamp(reply[5: 5 + 6])
 
             if reply[0] != 2:
-                return (packet_sending_timings, "ErrorWhileTransferringData")
+                return (True, "Error: WhileTransferringData")
 
         self._writer.write_eof()
-        return (packet_sending_timings, "Success")
+        return (False, "Success")
 
     async def get_final_reply(self):
         return await self._reader.readexactly(2)

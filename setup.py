@@ -11,7 +11,7 @@ requirements = [
 
 setup(
     name='harp-soundcard-server',
-    version='0.1',
+    version='0.2',
     description="""Harp Sound card TCP Server""",
     long_description="""TCP Server to interact with the Harp Sound Card board developed by the Scientific Hardware Platform at
     the Champalimaud Foundation.""",

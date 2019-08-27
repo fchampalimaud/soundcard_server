@@ -1,6 +1,7 @@
 import asyncio
 import time
 
+
 class Communication:
     def __init__(self, protocol, loop, address='localhost', port=9999):
         self._reader = None
@@ -54,10 +55,10 @@ class Communication:
             timestamp = self._protocol.convert_timestamp(reply[5: 5 + 6])
 
             if reply[0] != 2:
-                return
+                return (packet_sending_timings, "ErrorWhileTransferringData")
 
         self._writer.write_eof()
-        return packet_sending_timings
+        return (packet_sending_timings, "Success")
 
     async def get_final_reply(self):
         return await self._reader.readexactly(2)

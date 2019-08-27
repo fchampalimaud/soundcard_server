@@ -38,11 +38,10 @@ async def tcp_send_sound_client(loop):
     # add the metadata information regarding the sound and which index will the sound be written to
     protocol.add_metadata([sound_index, protocol.sound_file_size_in_samples, sample_rate, data_type])
 
+    initial_time = time.time()
+
     # initialize communication
     comm = Communication(protocol, loop)
-    await comm.open()
-
-    initial_time = time.time()
 
     # start creating message to send according to the protocol
     # NOTE: if on calling prepare_header with_file_metadata was False, the next elements aren't required
@@ -67,6 +66,9 @@ async def tcp_send_sound_client(loop):
     # force the calculation of the checksum
     protocol.update_header_checksum()
 
+    # open communication just before sending data
+    await comm.open()
+
     # send header to server
     comm.send_header(protocol.header)
 
@@ -83,9 +85,9 @@ async def tcp_send_sound_client(loop):
     # send rest of data
     print(f'Sending...')
     # Communication.send_sound calculates the duration that it took to send each packet
-    (packet_sending_timings, error_str) = await comm.send_sound()
+    (has_error, error_str) = await comm.send_sound()
 
-    if error_str != "Success":
+    if has_error:
         print('Error while transfering sound data. Please try again after resetting the Sound Card')
         return
 
@@ -94,9 +96,7 @@ async def tcp_send_sound_client(loop):
     # wait for the server's response after sending everything
     if msg == b'OK':
         total_time = (time.time() - initial_time)
-        bandwidth = (((32768 * len(packet_sending_timings)) / total_time) * 8) / 2**20
         print(f'Elapsed time: {int(round(total_time * 1000))} ms')
-        print(f'Bandwidth: {round(bandwidth, 1)} Mbit/s')
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

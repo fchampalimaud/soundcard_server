@@ -95,7 +95,6 @@ class Protocol(object):
         :param description_filename_content:
         """
         self._add_filemetadata_info(description_filename_content, 1536, 511)
-        pass
 
     def add_metadata(self, metadata):
         """

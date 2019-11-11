@@ -27,7 +27,7 @@ class SoundCardTCPServer(object):
         self.init_data()
 
         # Start server to listen for incoming requests
-        asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
+        await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
         while True:
             await asyncio.sleep(1)

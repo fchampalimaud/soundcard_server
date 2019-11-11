@@ -88,7 +88,7 @@ async def tcp_send_sound_client(loop):
     (has_error, error_str) = await comm.send_sound()
 
     if has_error:
-        print('Error while transfering sound data. Please try again after resetting the Sound Card')
+        print(f'Error while transfering sound data with message "{error_str}". Please try again after resetting the Sound Card')
         return
 
     msg = await comm.get_final_reply()

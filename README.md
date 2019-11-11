@@ -15,12 +15,11 @@ For Windows systems, go to the Releases page and download the latest compiled ve
 ## For developers ##
 
 1. *(optional but recommended)* Create a Python virtual environment (e.g., with `conda` or `virtualenv` or another Python virtual environment manager)
-2. Clone the repository to your local system
 
+2. Clone the repository to your local system
     `git clone https://github.com/fchampalimaud/soundcard_server.git`
 
 3. Go to the `soundcard_server` folder just created and install the package in `develop` mode:
-
     `python setup.py develop` or by using `pip install -e .`
 
 ## Usage example ##

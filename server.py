@@ -27,7 +27,7 @@ class SoundCardTCPServer(object):
         self.init_data()
 
         # Start server to listen for incoming requests
-        asrv = await asyncio.start_server(self._handle_request, self.address, int(self.port))
+        await asyncio.start_server(self._handle_request, self.address, int(self.port))
         print('SoundCardTCPServer started and waiting for requests')
         while True:
             await asyncio.sleep(1)
@@ -76,7 +76,8 @@ class SoundCardTCPServer(object):
         reset_cmd = [ord('c'), ord('m'), ord('d'), 0x88, ord('f')]
         # cmd = 'cmd' + chr(0x88) + 'f'
         wrt = self._dev.write(1, reset_cmd, 100)
-        assert wrt == len(reset_cmd)
+        if wrt != len(reset_cmd):
+            raise AssertionError("Error while sending reset command to device")
 
         time.sleep(700.0 / 1000.0)
         self.open()
@@ -112,9 +113,9 @@ class SoundCardTCPServer(object):
 
         # Data command reply:     'c' 'm' 'd' '0x81' + random + error
         self._data_cmd_reply = array.array('b', [0] * (4 + self._int32_size + self._int32_size))
-    
-    def set_reply_type(self, type):
-        self._reply[2] = np.array([type], dtype=np.int8)
+
+    def set_reply_type(self, reply_type):
+        self._reply[2] = np.array([reply_type], dtype=np.int8)
 
     def clear_data(self):
         self.init_data()
@@ -129,7 +130,9 @@ class SoundCardTCPServer(object):
             self._send_data_to_device(data_to_send, rand_val, read_timeout)
             return
 
-        assert res_write == len(data_to_send)
+        if res_write == len(data_to_send):
+            raise AssertionError("Written data size on device different than data sent size")
+
         self._receive_reply_from_device(rand_val, read_timeout)
 
     def _receive_reply_from_device(self, rand_val, read_timeout=400):
@@ -145,9 +148,14 @@ class SoundCardTCPServer(object):
         rand_val_received = int.from_bytes(self._data_cmd_reply[4: 4 + self._int32_size], byteorder='little', signed=True)
         error_received = int.from_bytes(self._data_cmd_reply[8: 8 + self._int32_size], byteorder='little', signed=False)
 
-        assert ret == 12
-        assert rand_val_received == rand_val
-        assert error_received == 0
+        if ret != 12:
+            raise AssertionError("Reply from device is not 12 bytes")
+
+        if rand_val_received != rand_val:
+            raise AssertionError("Random value received different than the random value sent")
+
+        if error_received != 0:
+            raise AssertionError("Error received from device")
 
     async def _handle_request(self, reader, writer):
         async with self._sem:

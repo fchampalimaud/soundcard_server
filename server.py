@@ -114,8 +114,8 @@ class SoundCardTCPServer(object):
         # Data command reply:     'c' 'm' 'd' '0x81' + random + error
         self._data_cmd_reply = array.array('b', [0] * (4 + self._int32_size + self._int32_size))
 
-    def set_reply_type(self, type):
-        self._reply[2] = np.array([type], dtype=np.int8)
+    def set_reply_type(self, reply_type):
+        self._reply[2] = np.array([reply_type], dtype=np.int8)
 
     def clear_data(self):
         self.init_data()
